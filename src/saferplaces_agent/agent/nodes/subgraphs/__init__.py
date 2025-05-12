@@ -1,0 +1,1 @@
+from .demo_subgraph import demo_weather_subgraph
