@@ -119,6 +119,12 @@ class BaseAgentTool(BaseTool):
     # DOC: Tool esecution, what this returns will be settet as tool.ouput so this should be overriden by the user
     def _execute(self, **tool_args):
         return None
+    
+    
+    # DOC: Back to a consisent state
+    def _on_tool_end(self):
+        self.execution_confirmed = False
+        self.output_confirmed = False
                 
     
     # DOC: Run tool with the given arguments, this function should be overridden by the user that will call super() to do args validation and confirmation
@@ -143,5 +149,7 @@ class BaseAgentTool(BaseTool):
             self.confirm_ouputs(tool_args)              # 5. Confirm output
         
         controls_after_execution(tool_args)
+        
+        self._on_tool_end()
         
         return self.output
