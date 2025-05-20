@@ -128,12 +128,15 @@ class DemoWeatherTool(BaseAgentTool):
         # DOC: this is a dummy execution and provided output
         weather_descr = f'It will rain {sum(area) / 4} mm in {area} on {date}'
         
-        # DOC: Back to a consisent state
-        self.execution_confirmed = False
-        
         return {
             "weather_description": weather_descr,
         }
+        
+    
+    # DOC: Back to a consisent state
+    def _on_tool_end(self):
+        self.execution_confirmed = False
+        self.output_confirmed = True
         
     
     # DOC: Try running AgentTool → Will check required, validity and inference over arguments thatn call and return _execute()
