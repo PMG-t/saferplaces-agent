@@ -45,7 +45,7 @@ def chatbot_update_messages(state: BaseGraphState):
     return {'messages': messages, 'node_params': dict()}
 
 
-def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESSAGES, N.DEMO_SUBGRAPH]]:     # type: ignore
+def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESSAGES, N.DEMO_SUBGRAPH, N.CREATE_PROJECT_SUBGRAPH]]:     # type: ignore
     state["messages"] = state.get("messages", [])
     
     if len(state["messages"]) > 0:
@@ -65,6 +65,8 @@ def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESS
             
             if tool_call['name'] == demo_weather_tool.name:
                 return Command(goto = N.DEMO_SUBGRAPH, update = { "messages": [ ai_message ], "node_history": [N.CHATBOT, N.DEMO_SUBGRAPH] })
+            
+        return Command(goto = N.CREATE_PROJECT_SUBGRAPH, update = { "messages": [ ai_message ], "requested_agent": None, "node_params": dict(), "node_history": [N.CHATBOT] })
     
         return Command(goto = END, update = { "messages": [ ai_message ], "requested_agent": None, "node_params": dict(), "node_history": [N.CHATBOT] })
     

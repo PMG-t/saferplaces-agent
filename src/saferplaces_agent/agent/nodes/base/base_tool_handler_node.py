@@ -20,7 +20,8 @@ class BaseToolHandlerNode:
         tool_handler_node_name: str,
         tool_interrupt_node_name: str,
         tools: dict,
-        additional_ouput_state: dict = dict()
+        additional_ouput_state: dict = dict(),
+        exit_nodes: list[str] = []
     ):
         instance = super().__new__(cls) 
         instance.__init__(
@@ -28,7 +29,8 @@ class BaseToolHandlerNode:
             tool_handler_node_name,
             tool_interrupt_node_name,
             tools,
-            additional_ouput_state
+            additional_ouput_state,
+            exit_nodes
         )
         return instance.setup()
         
@@ -39,7 +41,8 @@ class BaseToolHandlerNode:
             tool_handler_node_name: str,
             tool_interrupt_node_name: str,
             tools: dict,
-            additional_ouput_state: dict = dict()
+            additional_ouput_state: dict = dict(),
+            exit_nodes: list[str] = []
     ):
         self.state = state
         self.state_type = type(state)
@@ -47,6 +50,7 @@ class BaseToolHandlerNode:
         self.tool_interrupt_node_name = tool_interrupt_node_name
         self.tools = tools
         self.additional_ouput_state = additional_ouput_state
+        self.exit_nodes = exit_nodes
         
         
     def setup(self):
@@ -79,7 +83,17 @@ class BaseToolHandlerNode:
                 "tool_call_id": tool_call['id'],
             }
             
-            return {"messages": tool_response_message, **self.additional_ouput_state}
+            if state.get('node_params', dict()).get(self.tool_handler_node_name, dict()).get('next_node', None) is not None:
+                next_node = state['node_params'][self.tool_handler_node_name]['next_node']
+                return Command(
+                    goto=next_node, 
+                    update={
+                        "messages": [tool_response_message],
+                        **self.additional_ouput_state
+                    }
+                )
+            else:
+                return {"messages": tool_response_message, **self.additional_ouput_state}
                 
                 
 
@@ -94,7 +108,7 @@ class BaseToolHandlerNode:
         
         tool_handler.__annotations__ = {
             'state': type(self.state),
-            'return': Command[Literal[END, self.tool_interrupt_node_name]]
+            'return': Command[Literal[END, self.tool_interrupt_node_name, *self.exit_nodes]]
         }
         
         return tool_handler
