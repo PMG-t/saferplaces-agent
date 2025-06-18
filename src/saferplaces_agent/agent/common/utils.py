@@ -161,7 +161,6 @@ def build_tool_call_message(tool_name, tool_args=None, tool_call_id=None, messag
     message_id = hash_string(datetime.datetime.now().isoformat()) if message_id is None else message_id
     message_content = "" if message_content is None else message_content
     tool_call_id = hash_string(message_id) if tool_call_id is None else tool_call_id
-    tool_args = dict() if tool_args is None else tool_args
     tool_call_message = AIMessage(
         id = message_id,
         content = message_content,
@@ -169,7 +168,7 @@ def build_tool_call_message(tool_name, tool_args=None, tool_call_id=None, messag
             ToolCall(
                 id = tool_call_id,
                 name = tool_name,
-                args = tool_args,            
+                args = tool_args if tool_args is not None else dict()
             )
         ]
     )

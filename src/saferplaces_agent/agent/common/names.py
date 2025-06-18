@@ -31,6 +31,8 @@ DEMO_TOOL_INTERRUPT = "demo_tool_interrupt"
 
 CREATE_PROJECT_SUBGRAPH = "create_project_subgraph"
 
+CREATE_PROJECT_MAIN = "create_project_main"
+
 CREATE_PROJECT_SELECT_DTM_TOOL = "create_project_select_dtm_tool"
 CREATE_PROJECT_SELECT_DTM_TOOL_RUNNER = "create_project_select_dtm_tool_runner"
 

@@ -26,7 +26,7 @@ class CreateProjectSelectBuildingsTool(BaseAgentTool):
         do_download: bool = Field(
             title = "Download Buildings",
             description = """If True, the tool will automatically download the buildings in the specified area.
-            If False, the user will be prompted to upload a geo-features file containing the buildings.""",
+            If False, the user will be prompted to upload a geo-features file containing the buildings. Default is True.""",
             examples = [
                 True,
                 False,

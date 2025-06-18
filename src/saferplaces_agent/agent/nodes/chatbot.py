@@ -65,8 +65,10 @@ def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESS
             
             if tool_call['name'] == demo_weather_tool.name:
                 return Command(goto = N.DEMO_SUBGRAPH, update = { "messages": [ ai_message ], "node_history": [N.CHATBOT, N.DEMO_SUBGRAPH] })
-            
-        return Command(goto = N.CREATE_PROJECT_SUBGRAPH, update = { "messages": [ ai_message ], "requested_agent": None, "node_params": dict(), "node_history": [N.CHATBOT] })
+        
+        # TODO: this needs to be 
+        # DOC: No update message from ai → create_project_subgraph is complex, human request needs to be handled by each sub tool
+        return Command(goto = N.CREATE_PROJECT_SUBGRAPH, update = { "messages": [], "requested_agent": None, "node_params": dict(), "node_history": [N.CHATBOT] })
     
         return Command(goto = END, update = { "messages": [ ai_message ], "requested_agent": None, "node_params": dict(), "node_history": [N.CHATBOT] })
     
