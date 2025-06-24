@@ -15,7 +15,8 @@ from agent.nodes import (
 )
 from agent.nodes.subgraphs import (
     demo_weather_subgraph,
-    create_project_subgraph
+    create_project_subgraph,
+    flooding_rainfall_subgraph
 )
 
 
@@ -32,6 +33,8 @@ graph_builder.add_node(N.DEMO_SUBGRAPH, demo_weather_subgraph)
 
 graph_builder.add_node(N.CREATE_PROJECT_SUBGRAPH, create_project_subgraph)
 
+graph_builder.add_node(N.FLOODING_RAINFALL_SUBGRAPH, flooding_rainfall_subgraph)
+
 
 # DOC: define edges
 
@@ -40,6 +43,7 @@ graph_builder.add_edge(N.CHATBOT_UPDATE_MESSAGES, N.CHATBOT)
 
 graph_builder.add_edge(N.DEMO_SUBGRAPH, N.CHATBOT)
 graph_builder.add_edge(N.CREATE_PROJECT_SUBGRAPH, N.CHATBOT)
+graph_builder.add_edge(N.FLOODING_RAINFALL_SUBGRAPH, N.CHATBOT)
 
 
 # DOC: build graph

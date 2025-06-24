@@ -30,8 +30,12 @@ DEMO_TOOL_INTERRUPT = "demo_tool_interrupt"
 # REGION: [Create Project Subgraph]
 
 CREATE_PROJECT_SUBGRAPH = "create_project_subgraph"
+CREATE_PROJECT_SUBGRAPH_INTERFACE_TOOL = "create_project_subgraph_interface_tool"
 
 CREATE_PROJECT_MAIN = "create_project_main"
+
+CREATE_PROJECT_TOOL_HANDLER = "create_project_tool_handler"
+CREATE_PROJECT_TOOL_INTERRUPT = "create_project_tool_interrupt"
 
 CREATE_PROJECT_SELECT_DTM_TOOL = "create_project_select_dtm_tool"
 CREATE_PROJECT_SELECT_DTM_TOOL_RUNNER = "create_project_select_dtm_tool_runner"
@@ -48,7 +52,32 @@ CREATE_PROJECT_SELECT_LITHOLOGY_TOOL_RUNNER = "create_project_select_lithology_t
 CREATE_PROJECT_SELECT_OTHER_LAYERS_TOOL = "create_project_select_other_layers_tool"
 CREATE_PROJECT_SELECT_OTHER_LAYERS_TOOL_RUNNER = "create_project_select_other_layers_tool_runner"
 
-CREATE_PROJECT_TOOL_HANDLER = "create_project_tool_handler"
-CREATE_PROJECT_TOOL_INTERRUPT = "create_project_tool_interrupt"
-
 # ENDREGION: [Create Project Subgraph]
+
+
+# REGION: [Flooding Rainfall Subgraph]
+
+FLOODING_RAINFALL_SUBGRAPH = "flooding_rainfall_subgraph"
+FLOODING_RAINFALL_SUBGRAPH_INTERFACE_TOOL = "flooding_rainfall_subgraph_interface_tool"
+
+FLOODING_RAINFALL_MAIN = "flooding_rainfall_main"
+
+FLOODING_RAINFALL_TOOL_HANDLER = "flooding_rainfall_tool_handler"
+FLOODING_RAINFALL_TOOL_INTERRUPT = "flooding_rainfall_tool_interrupt"
+
+FLOODING_RAINFALL_DEFINE_RAIN_TOOL = "flooding_rainfall_define_rain_tool"
+FLOODING_RAINFALL_DEFINE_RAIN_TOOL_RUNNER = "flooding_rainfall_define_rain_tool_runner"
+
+FLOODING_RAINFALL_DEFINE_INFILTRATION_TOOL = "flooding_rainfall_define_infiltration_tool"
+FLOODING_RAINFALL_DEFINE_INFILTRATION_TOOL_RUNNER = "flooding_rainfall_define_infiltration_tool_runner"
+
+FLOODING_RAINFALL_DEFINE_STORAGE_TOOL = "flooding_rainfall_define_storage_tool"
+FLOODING_RAINFALL_DEFINE_STORAGE_TOOL_RUNNER = "flooding_rainfall_define_storage_tool_runner"
+
+FLOODING_RAINFALL_DEFINE_MODEL_TOOL = "flooding_rainfall_define_model_tool"
+FLOODING_RAINFALL_DEFINE_MODEL_TOOL_RUNNER = "flooding_rainfall_define_model_tool_runner"
+
+FLOODING_RAINFALL_DEFINE_NOTES_TOOL = "flooding_rainfall_define_notes_tool"
+FLOODING_RAINFALL_DEFINE_NOTES_TOOL_RUNNER = "flooding_rainfall_define_notes_tool_runner"
+
+# ENDREGION: [Flooding Rainfall Subgraph]

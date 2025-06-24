@@ -6,3 +6,8 @@ from .create_project_tools import (
     CreateProjectSelectLithologyTool,
     CreateProjectSelectOtherLayersTool
 )
+
+from .flooding_rainfall_tools import (
+    FloodingRainfallDefineRainTool,
+    FloodingRainfallDefineModelTool
+)

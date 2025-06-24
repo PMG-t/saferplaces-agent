@@ -41,7 +41,7 @@ class CreateProjectSelectDTMTool(BaseAgentTool):
         )
         crs: None | str = Field(
             title = "CRS",
-            description = f"The Coordinate Reference System (CRS) for the area coordinates. If not specified, use None as default. The default is EPSG:4326.",
+            description = f"The Coordinate Reference System (CRS) for the area coordinates. The default is EPSG:4326.",
             examples = [
                 None,
                 "EPSG:4326",

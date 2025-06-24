@@ -136,6 +136,7 @@ def ask_llm(role, message, llm=_base_llm, eval_output=False):
             pass
     return llm_out.content
 
+
 # ENDREGION: [LLM and Tools]
 
 
@@ -145,6 +146,25 @@ def ask_llm(role, message, llm=_base_llm, eval_output=False):
 def merge_sequences(left: Sequence[str], right: Sequence[str]) -> Sequence[str]:
     """Add two lists together."""
     return left + right
+
+def merge_dictionaries(left: dict, right: dict) -> dict:
+    """Add two dictionaries together but merging ad all levels."""
+    for key, value in right.items():
+        if key in left:
+            if isinstance(left[key], dict) and isinstance(value, dict) and len(value) > 0:
+                left[key] = merge_dictionaries(left[key], value)
+            elif isinstance(left[key], list) and isinstance(value, list):
+                left[key] = left[key] + value
+            else:
+                left[key] = value
+        else:
+            left[key] = value
+    return left            
+            
+
+def is_human_message(message):
+    """Check if the message is a human message."""
+    return hasattr(message, 'role') and message.role == 'human'
 
 
 def remove_message(message_id):

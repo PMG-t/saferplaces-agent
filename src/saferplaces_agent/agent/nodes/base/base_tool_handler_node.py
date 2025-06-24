@@ -10,6 +10,19 @@ from . import BaseToolInterrupt
 
 # DOC: base_tool_handler is a function that creates a tool handler function for a specific AgentTool.
 
+class BaseToolHandlerNodeCallback():
+    def __init__(self, callback = None, callback_args: dict = dict()):
+        self.callback = callback
+        self.callback_args = callback_args if callback_args is not None else dict()
+        
+    def __call__(self, **kwargs):
+        """Call the callback function with the provided arguments."""
+        if self.callback is not None:
+            return self.callback(**(self.callback_args | kwargs))
+        else:
+            return
+        
+
 class BaseToolHandlerNode:
     
     # DOC: This is a template function that will be used to create the tool handler function.
@@ -21,7 +34,8 @@ class BaseToolHandlerNode:
         tool_interrupt_node_name: str,
         tools: dict,
         additional_ouput_state: dict = dict(),
-        exit_nodes: list[str] = []
+        exit_nodes: list[str] = [],
+        on_handle_end_callback = None
     ):
         instance = super().__new__(cls) 
         instance.__init__(
@@ -30,7 +44,8 @@ class BaseToolHandlerNode:
             tool_interrupt_node_name,
             tools,
             additional_ouput_state,
-            exit_nodes
+            exit_nodes,
+            on_handle_end_callback
         )
         return instance.setup()
         
@@ -42,7 +57,8 @@ class BaseToolHandlerNode:
             tool_interrupt_node_name: str,
             tools: dict,
             additional_ouput_state: dict = dict(),
-            exit_nodes: list[str] = []
+            exit_nodes: list[str] = [],
+            on_handle_end_callback = None
     ):
         self.state = state
         self.state_type = type(state)
@@ -52,6 +68,11 @@ class BaseToolHandlerNode:
         self.additional_ouput_state = additional_ouput_state
         self.exit_nodes = exit_nodes
         
+        self.on_handle_end_callback = self.default_on_handle_end_callback if on_handle_end_callback is None else on_handle_end_callback
+    
+    
+    def default_on_handle_end_callback(self, **kwargs):
+        return
         
     def setup(self):
         
@@ -83,17 +104,25 @@ class BaseToolHandlerNode:
                 "tool_call_id": tool_call['id'],
             }
             
-            if state.get('node_params', dict()).get(self.tool_handler_node_name, dict()).get('next_node', None) is not None:
-                next_node = state['node_params'][self.tool_handler_node_name]['next_node']
+            callback_result = self.on_handle_end_callback(**{'tool_output': result})  # DOC: Call the on_handle_end function if provided
+            
+            additional_updates = self.additional_ouput_state | callback_result.get('update', dict())
+            next_node = callback_result.get('next_node', None)
+            
+            if next_node is not None:
+                
+                print(f'\n\n Next node: {next_node} \n\n')
+                
                 return Command(
                     goto=next_node, 
                     update={
                         "messages": [tool_response_message],
-                        **self.additional_ouput_state
+                        **additional_updates
                     }
                 )
             else:
-                return {"messages": tool_response_message, **self.additional_ouput_state}
+                print('\n\n Next node is none! \n\n')
+                return {"messages": tool_response_message, **additional_updates}
                 
                 
 

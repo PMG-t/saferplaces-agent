@@ -33,6 +33,22 @@ class BaseAgentTool(BaseTool):
         self.description = description
         self.args_schema = args_schema
         
+    
+    def tool_decription(self):
+        def args_description(args_schema):
+            args_description = '\n'.join([
+                f'- {field} : {args_schema[field].description}'
+                for field in args_schema.keys()
+            ])   
+            return args_description if args_description else "No arguments required."
+        tool_desc = f"""Tool: {self.name}
+        Description: {self.description}
+        Args description:
+        {args_description(self.args_schema.model_fields)}
+        """
+        return tool_desc    
+    
+        
     # DOC: Check missing arguments based on the args_schema (if Deafult is None than it's not required)
     def check_required_args(self, tool_args):
         missing_args = [arg for arg, schema in self.args_schema.model_fields.items() if schema.is_required() and tool_args[arg] is None]
