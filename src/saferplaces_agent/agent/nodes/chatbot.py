@@ -14,6 +14,8 @@ from langchain_core.language_models import LanguageModelInput
 from agent import utils
 from agent import names as N
 from agent.common.states import BaseGraphState
+from agent.nodes.subgraphs.create_project import create_project_subgraph_interface_tool
+from agent.nodes.subgraphs.flooding_rainfall import flooding_rainfall_subgraph_interface_tool
 from agent.nodes.tools import (
     DemoWeatherTool,
 )
@@ -22,9 +24,11 @@ from agent.nodes.tools import (
 
 demo_weather_tool = DemoWeatherTool()
 
-tools_map = {
-    demo_weather_tool.name : demo_weather_tool,
-}
+tools_map = dict()
+tools_map[N.CREATE_PROJECT_SUBGRAPH_INTERFACE_TOOL] = create_project_subgraph_interface_tool
+tools_map[N.FLOODING_RAINFALL_SUBGRAPH_INTERFACE_TOOL] = flooding_rainfall_subgraph_interface_tool
+# tool_map[demo_weather_tool.name] = demo_weather_tool
+
 
 tool_node = ToolNode([tool for tool in tools_map.values()])
 
@@ -45,7 +49,7 @@ def chatbot_update_messages(state: BaseGraphState):
     return {'messages': messages, 'node_params': dict()}
 
 
-def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESSAGES, N.DEMO_SUBGRAPH]]:     # type: ignore
+def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESSAGES, N.DEMO_SUBGRAPH, N.CREATE_PROJECT_SUBGRAPH, N.FLOODING_RAINFALL_SUBGRAPH]]:     # type: ignore
     state["messages"] = state.get("messages", [])
     
     if len(state["messages"]) > 0:
@@ -54,7 +58,7 @@ def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESS
             return Command(goto=N.CHATBOT_UPDATE_MESSAGES)
         
         llm_with_tools = set_tool_choice(tool_choice = state.get("node_params", dict()).get(N.CHATBOT, dict()).get("tool_choice", None))
-            
+        
         ai_message = llm_with_tools.invoke(state["messages"])
         
         if hasattr(ai_message, "tool_calls") and len(ai_message.tool_calls) > 0:
@@ -65,7 +69,10 @@ def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESS
             
             if tool_call['name'] == demo_weather_tool.name:
                 return Command(goto = N.DEMO_SUBGRAPH, update = { "messages": [ ai_message ], "node_history": [N.CHATBOT, N.DEMO_SUBGRAPH] })
+            elif tool_call['name'] == N.CREATE_PROJECT_SUBGRAPH_INTERFACE_TOOL:
+                return Command(goto = N.CREATE_PROJECT_SUBGRAPH, update = { "messages": [], "node_history": [N.CHATBOT, N.CREATE_PROJECT_SUBGRAPH] })
+            elif tool_call['name'] == N.FLOODING_RAINFALL_SUBGRAPH_INTERFACE_TOOL:
+                return Command(goto = N.FLOODING_RAINFALL_SUBGRAPH, update = { "messages": [], "node_history": [N.CHATBOT, N.FLOODING_RAINFALL_SUBGRAPH] })
+            
     
         return Command(goto = END, update = { "messages": [ ai_message ], "requested_agent": None, "node_params": dict(), "node_history": [N.CHATBOT] })
-    
-    return Command(goto = END, update = { "messages": [], "requested_agent": None, "node_params": dict(), "node_history": [N.CHATBOT] })

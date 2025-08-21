@@ -6,6 +6,8 @@ import re
 import ast
 import uuid
 import math
+import hashlib
+import datetime
 import tempfile
 import textwrap
 
@@ -14,7 +16,7 @@ from typing import Sequence
 
 from langchain_openai import ChatOpenAI
 
-from langchain_core.messages import RemoveMessage, AIMessage
+from langchain_core.messages import RemoveMessage, AIMessage, ToolMessage, ToolCall
 
 
 
@@ -27,6 +29,9 @@ os.makedirs(_temp_dir, exist_ok=True)
 
 def guid():
     return str(uuid.uuid4())
+
+def hash_string(s, hash_method=hashlib.md5):
+    return hash_method(s.encode('utf-8')).hexdigest()
 
 
 def python_path():
@@ -116,12 +121,21 @@ def ask_llm(role, message, llm=_base_llm, eval_output=False):
             print(type(content))
             print(content)
             print('\n\n')
+            
+            # DOC: LLM can asnwer with a python code block, so we need to extract the code and evaluate it
             if type(content) is str and content.startswith('```python'):
                 content = content.split('```python')[1].split('```')[0]
+            
+            # DOC: LLM can answer with a python dict but sometimes as json, so we need to convert some values from json to py
+            content = re.sub(r'\bnull\b', 'None', content) # DOC: replace null with None
+            content = re.sub(r'\btrue\b', 'True', content) # DOC: replace true with True
+            content = re.sub(r'\bfalse\b', 'False', content) # DOC: replace false with False
+            
             return ast.literal_eval(content)
         except: 
             pass
     return llm_out.content
+
 
 # ENDREGION: [LLM and Tools]
 
@@ -133,6 +147,26 @@ def merge_sequences(left: Sequence[str], right: Sequence[str]) -> Sequence[str]:
     """Add two lists together."""
     return left + right
 
+def merge_dictionaries(left: dict, right: dict) -> dict:
+    """Add two dictionaries together but merging ad all levels."""
+    for key, value in right.items():
+        if key in left:
+            if isinstance(left[key], dict) and isinstance(value, dict) and len(value) > 0:
+                left[key] = merge_dictionaries(left[key], value)
+            elif isinstance(left[key], list) and isinstance(value, list):
+                left[key] = left[key] + value
+            else:
+                left[key] = value
+        else:
+            left[key] = value
+    return left            
+            
+
+def is_human_message(message):
+    """Check if the message is a human message."""
+    return hasattr(message, 'role') and message.role == 'human'
+
+
 def remove_message(message_id):
     return RemoveMessage(id = message_id)
 
@@ -142,4 +176,22 @@ def remove_tool_messages(tool_messages):
     else:
         return [remove_message(tm.id) for tm in tool_messages]
     
+    
+def build_tool_call_message(tool_name, tool_args=None, tool_call_id=None, message_id=None, message_content=None):
+    message_id = hash_string(datetime.datetime.now().isoformat()) if message_id is None else message_id
+    message_content = "" if message_content is None else message_content
+    tool_call_id = hash_string(message_id) if tool_call_id is None else tool_call_id
+    tool_call_message = AIMessage(
+        id = message_id,
+        content = message_content,
+        tool_calls = [
+            ToolCall(
+                id = tool_call_id,
+                name = tool_name,
+                args = tool_args if tool_args is not None else dict()
+            )
+        ]
+    )
+    return tool_call_message
+
 # ENDREGION: [Message utils funtion]
