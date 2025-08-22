@@ -81,3 +81,17 @@ FLOODING_RAINFALL_DEFINE_NOTES_TOOL = "flooding_rainfall_define_notes_tool"
 FLOODING_RAINFALL_DEFINE_NOTES_TOOL_RUNNER = "flooding_rainfall_define_notes_tool_runner"
 
 # ENDREGION: [Flooding Rainfall Subgraph]
+
+# REGION: [SaferPlacesAPI Subgraph]
+
+SAFERPLACES_API_SUBGRAPH = "saferplaces_api_subgraph"
+
+SAFERPLACES_API_TOOL_HANDLER = "saferplaces_api_tool_handler"
+SAFERPLACES_API_TOOL_INTERRUPT = "saferplaces_api_tool_interrupt"
+
+
+
+SAFERBUILDINGS_TOOL = "saferbuildings_tool"
+SAFERBUILDINGS_TOOL_RUNNER = "saferbuildings_tool_runner"
+
+# ENDREGION: [SaferPlacesAPI Subgraph]

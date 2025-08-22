@@ -11,3 +11,7 @@ from .flooding_rainfall_tools import (
     FloodingRainfallDefineRainTool,
     FloodingRainfallDefineModelTool
 )
+
+from .saferplaces_api_tools import (
+    SaferBuildingsTool
+)

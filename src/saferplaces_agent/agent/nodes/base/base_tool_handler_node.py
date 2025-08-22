@@ -72,7 +72,7 @@ class BaseToolHandlerNode:
     
     
     def default_on_handle_end_callback(self, **kwargs):
-        return
+        return dict()
         
     def setup(self):
         
@@ -121,7 +121,6 @@ class BaseToolHandlerNode:
                     }
                 )
             else:
-                print('\n\n Next node is none! \n\n')
                 return {"messages": tool_response_message, **additional_updates}
                 
                 
