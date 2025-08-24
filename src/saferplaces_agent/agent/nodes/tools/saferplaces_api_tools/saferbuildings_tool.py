@@ -262,7 +262,7 @@ class SaferBuildingsTool(BaseAgentTool):
             args_schema = SaferBuildingsInputSchema,
             **kwargs
         )
-        self.execution_confirmed = False
+        self.execution_confirmed = True
         self.output_confirmed = True
         
     
@@ -290,36 +290,81 @@ class SaferBuildingsTool(BaseAgentTool):
         **kwargs: Any,  # dict[str, Any] = None,
     ): 
         # DOC: Call the SaferBuildings API ...
-        print('\n'*2, '-'*80, '\n')
-
-        api_root_local = "http://localhost:5000" # TEST: only when running locally
-        api_url = f"{os.getenv('SAFERPLACES_API_ROOT')}/processes/safer-buildings-process/execution"
-        payload = { 
-            "inputs": kwargs  | {
-                "token": os.getenv("SAFERPLACES_API_TOKEN"),
-                "user": os.getenv("SAFERPLACES_API_USER"),
-            } | {
-                "wd_thresh": 1.0, # speed-up
-                "out": f"s3://saferplaces.co/SaferPlaces-Agent/dev/saferbuildings_tool/out_{datetime.datetime.now(tz=datetime.timezone.utc).strftime('%Y%m%dT%H%M%S')}.gpkg",
-                "summary_on": "subtype",  # TEST: use subtype for summary
-            } | {
-                "debug": True,  # TEST: enable debug mode
+        # api_root_local = "http://localhost:5000" # TEST: only when running locally
+        # api_url = f"{os.getenv('SAFERPLACES_API_ROOT')}/processes/safer-buildings-process/execution"
+        # payload = { 
+        #     "inputs": kwargs  | {
+        #         "token": os.getenv("SAFERPLACES_API_TOKEN"),
+        #         "user": os.getenv("SAFERPLACES_API_USER"),
+        #     } | {
+        #         "wd_thresh": 1.0, # speed-up
+        #         "out": f"s3://saferplaces.co/SaferPlaces-Agent/dev/saferbuildings_tool/out_{datetime.datetime.now(tz=datetime.timezone.utc).strftime('%Y%m%dT%H%M%S')}.gpkg",
+        #         "summary_on": "subtype",  # TEST: use subtype for summary
+        #     } | {
+        #         "debug": True,  # TEST: enable debug mode
+        #     }
+        # }
+        # print(f"Executing {self.name} with args: {payload}")
+        # response = requests.post(api_url, json=payload)
+        # print(f"Response status code: {response.status_code} - {response.content}")
+        # response = response.json() 
+        # TODO: Check output_code ...
+        
+        # TEST: Simulate a response for testing purposes
+        api_response = {
+            'files': {
+                'file_building': f"{os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')}/user=={self.graph_state.get('user_id', 'test')}/saferbuildings-out/Rimini_coast_flooded_deb-2407.geojson"
+            }, 
+            'id': 'saferplacesapi.SaferBuildingsProcessor',
+            'message': {
+                'body': {
+                    'result': { 
+                        's3_uri': f"{os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')}/user=={self.graph_state.get('user_id', 'test')}/saferbuildings-out/Rimini_coast_flooded_deb-2407.geojson"
+                    }
+                }
             }
         }
-        print(f"Executing {self.name} with args: {payload}")
-        response = requests.post(api_url, json=payload)
-        print(f"Response status code: {response.status_code} - {response.content}")
-        response = response.json() 
-        # TODO: Check output_code ...
+        
+        # TODO: Check if the response is valid
+        
+        tool_response = {
+            'saferbuildings_response': api_response['message']['body']['result'],
+            
+            # TODO: Move in a method createMapActions()
+            'map_actions': [
+                {
+                    'action': 'new_layer',
+                    'layer_data': {
+                        'name': 'saferbuildings-water',  # TODO: add a autoincrement code
+                        'type': 'raster',
+                        'src': kwargs['water']
+                        # TODO: style for leafmap (?)
+                    }
+                },
+                {
+                    'action': 'new_layer',
+                    'layer_data': {
+                        'name': 'saferbuildings-out',   # TODO: add a autoincrement code (same as the water layer)
+                        'type': 'vector',
+                        'src': api_response['files']['file_building'],
+                        # TODO: style for leafmap (?) 
+                        'styles': [
+                            { 'name': 'flooded buildings', 'type': 'categoric', 'property': 'is_flooded', 'colormap': { 'true': '#FF0000', 'false': '#00FF00'} },
+                            # { 'name': 'flood depth', 'type': 'numeric', 'property': 'wd_median', 'colormap': { 0: '#FFFFFF', 0.2: "#00D9FF", 0.4: "#4D7BE5", 0.6:"#9934E7", 0.8:"#FF0073" } }
+                        ]
+                    }
+                }
+            ]
+        }
         
         print('\n', '-'*80, '\n')
         
-        return response
+        return tool_response
         
     
     # DOC: Back to a consisent state
     def _on_tool_end(self):
-        self.execution_confirmed = False
+        self.execution_confirmed = True
         self.output_confirmed = True
         
     

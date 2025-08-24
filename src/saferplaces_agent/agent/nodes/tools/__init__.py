@@ -13,5 +13,9 @@ from .flooding_rainfall_tools import (
 )
 
 from .saferplaces_api_tools import (
-    SaferBuildingsTool
+    SaferBuildingsTool,
+)
+
+from .geospatial_ops_tools import (
+    GeospatialOpsTool
 )

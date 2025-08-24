@@ -92,6 +92,15 @@ SAFERPLACES_API_TOOL_INTERRUPT = "saferplaces_api_tool_interrupt"
 
 
 SAFERBUILDINGS_TOOL = "saferbuildings_tool"
-SAFERBUILDINGS_TOOL_RUNNER = "saferbuildings_tool_runner"
 
 # ENDREGION: [SaferPlacesAPI Subgraph]
+
+# REGION: [Geospatial Operations Subgraph]
+
+GEOSPATIAL_OPS_SUBGRAPH = "geospatial_ops_subgraph"
+GEOSPATIAL_OPS_TOOL_HANDLER = "geospatial_ops_tool_handler"
+GEOSPATIAL_OPS_TOOL_INTERRUPT = "geospatial_ops_tool_interrupt"
+
+GEOSPATIAL_OPS_TOOL = "geospatial_ops_tool"
+
+# ENDREGION: [Geospatial Operations Subgraph]

@@ -4,7 +4,7 @@ from langgraph.graph import StateGraph, START
 from agent import utils
 from agent import names as N
 from agent.common.states import BaseGraphState
-from agent.nodes.tools import SaferBuildingsTool
+from agent.nodes.tools import SaferBuildingsTool, GeospatialOpsTool
 from agent.nodes.base import BaseToolHandlerNode, BaseToolInterruptNode
 
 
@@ -12,8 +12,10 @@ from agent.nodes.base import BaseToolHandlerNode, BaseToolInterruptNode
 # DOC: SAFERPLACES API subgraph
 
 saferplaces_api_saferbuildings_tool = SaferBuildingsTool()
+geospatial_ops_tool = GeospatialOpsTool()
 saferplaces_api_tools_dict = {
     saferplaces_api_saferbuildings_tool.name: saferplaces_api_saferbuildings_tool,
+    geospatial_ops_tool.name: geospatial_ops_tool
 }
 saferplaces_api_tool_names = list(saferplaces_api_tools_dict.keys())
 saferplaces_api_tools = list(saferplaces_api_tools_dict.values())
