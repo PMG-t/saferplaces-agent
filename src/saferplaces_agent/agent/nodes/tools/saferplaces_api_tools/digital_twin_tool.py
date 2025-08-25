@@ -45,6 +45,7 @@ class DigitalTwinInputSchema(BaseModel):
             "SRTM/V3",
         ],
         validation_alias=AliasChoices("dataset_dem", "dem", "dtm", "dem_dataset", "dtm_dataset"),
+        default = None
     )
 
     dataset_building: Optional[str] = Field(
@@ -65,7 +66,7 @@ class DigitalTwinInputSchema(BaseModel):
             "buildings",
             "buildings_provider",
             "provider_buildings",
-        ),
+        )
     )
 
     dataset_land_use: Optional[str] = Field(
@@ -86,17 +87,16 @@ class DigitalTwinInputSchema(BaseModel):
             "landuse",
             "landcover",
             "land_cover",
-        ),
+        )
     )
 
     # ------------------------------ Spatial scope ----------------------------
     bbox: Optional[Union[list[float], str]] = Field(
-        default=None,
         title="Area of interest (bbox or place name)",
         description=(
-            "AOI as a bounding box [min_lon, min_lat, max_lon, max_lat] in EPSG:4326, "
-            "or as a place name (country/continent/region/city). "
-            "If omitted, use None."
+            "Defines the area of interest (AOI) either as a bounding box of four elements"
+            "[min_lon, min_lat, max_lon, max_lat] in EPSG:4326 or as a place name "
+            "(e.g., 'Italy', 'Lombardia'). "
         ),
         examples=[
             [9.05, 45.42, 9.25, 45.55],
@@ -113,6 +113,7 @@ class DigitalTwinInputSchema(BaseModel):
             "bounds",
             "bounding_box",
         ),
+        default = None
     )
 
     # ------------------------------ Resolution -------------------------------
@@ -121,6 +122,7 @@ class DigitalTwinInputSchema(BaseModel):
         description="Target ground sampling distance (meters) for the DEM/DTM resampling.",
         examples=[30, 10, 5],
         validation_alias=AliasChoices("pixelsize", "pixel_size", "resolution", "res", "gsd"),
+        default = None
     )
 
     class Config:
@@ -135,7 +137,7 @@ class DigitalTwinTool(BaseAgentTool):
     def __init__(self, **kwargs):
         super().__init__(
             name = N.DIGITAL_TWIN_TOOL,
-            description =  """This tool generates a geospatial Digital Twin for a given Area of Interest (AOI).
+            description =  """This tool generates a geospatial Digital Twin for a given Area of Interest (AOI). Area of Interest (AOI) can be defined as a bounding box or a place name (country, region, continent, city).
             It assembles multiple spatial layers (DEM/DTM, buildings, land-use, and sea mask) into
             a coherent, analysis-ready dataset.
 
@@ -168,25 +170,48 @@ class DigitalTwinTool(BaseAgentTool):
             args_schema = DigitalTwinInputSchema,
             **kwargs
         )
-        self.execution_confirmed = True
+        self.execution_confirmed = False
         self.output_confirmed = True
 
     
     # DOC: Validation rules ( i.e.: valid init and lead time ... ) 
     def _set_args_validation_rules(self) -> dict:
-        
-        # return {
-        #     'area': [
-        #         lambda **ka: f"Invalid area coordinates: {ka['area']}. It should be a list of 4 float values representing the bounding box [min_x, min_y, max_x, max_y]." 
-        #             if isinstance(ka['area'], list) and len(ka['area']) != 4 else None  
-        #     ]
-        # }
         return dict()
         
     
     # DOC: Inference rules ( i.e.: from location name to bbox ... )
     def _set_args_inference_rules(self) -> dict:
-        return dict()
+        def infer_bbox(**kwargs):
+            print(f'\n\ninfer_bbox called with kwargs: {kwargs} \n\n')
+            def bounding_box_from_location_name(bbox):
+                if type(bbox) is str:
+                    bbox = utils.ask_llm(
+                        role = 'system',
+                        message = f"""Please provide the bounding box coordinates for the area: {bbox} with format [min_x, min_y, max_x, max_y] in EPSG:4326 Coordinate Reference System. 
+                        Provide only the coordinates list without any additional text or explanation.""",
+                        eval_output = True
+                    )
+                    self.execution_confirmed = False
+                return bbox
+            def round_bounding_box(bbox):
+                deg_r = 3 # round 3 decimals of degree ~ 111.32 meters
+                if type(bbox) is list:
+                    bbox = [
+                        utils.floor_decimals(bbox[0], deg_r),
+                        utils.floor_decimals(bbox[1], deg_r),
+                        utils.ceil_decimals(bbox[2], deg_r),
+                        utils.ceil_decimals(bbox[3], deg_r)
+                    ]
+                return bbox
+            bbox = bounding_box_from_location_name(kwargs['bbox'])
+            bbox = round_bounding_box(bbox)
+            return bbox
+        
+        infer_rules = {
+            'bbox': infer_bbox
+        }
+        
+        return infer_rules
         
     
     # DOC: Execute the tool → Build notebook, write it to a file and return the path to the notebook and the zarr output file
@@ -195,6 +220,15 @@ class DigitalTwinTool(BaseAgentTool):
         /,
         **kwargs: Any,  # dict[str, Any] = None,
     ): 
+        # DOC: set params for api, we do dis by hand and not using arg_schema to have better control over the output
+        workspace = f"saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}"
+        project = "saferplaces-agent"  # TODO: variable from state (setted from client session in graph update like user_id)
+        file_dem = 'digital_twin_dem.tif'
+        file_building = 'digital_twin_building.shp'
+        file_landuse = 'digital_twin_landuse.tif'
+        file_dem_building = 'digital_twin_dem_building.tif'
+        file_seamask = 'digital_twin_seamask.tif'
+
         # DOC: Call the SaferBuildings API ...
         # api_root_local = "http://localhost:5000" # TEST: only when running locally
         # api_url = f"{os.getenv('SAFERPLACES_API_ROOT')}/processes/digital-twin-process/execution"
@@ -204,6 +238,7 @@ class DigitalTwinTool(BaseAgentTool):
         #         "user": os.getenv("SAFERPLACES_API_USER"),
         #     } | {
         #         "workspace": f"saferplaces.co/SaferPlaces-Agent/dev')/user=={self.graph_state.get('user_id', 'test')}",
+        #         "project": "saferplaces-agent"    # TODO: variable from state (setted from client session in graph update like user_id)
         #     } | {
         #         "debug": True,  # TEST: enable debug mode
         #     }
@@ -217,13 +252,23 @@ class DigitalTwinTool(BaseAgentTool):
         # TEST: Simulate a response for testing purposes
         api_response = {
             'files': {
-                'file_building': f"{os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')}/user=={self.graph_state.get('user_id', 'test')}/Rimini_coast_flooded_deb-2407.geojson"
+                # DOC: Use this when running with true API
+                # 'file_dem': f"{workspace}/api_data/{project}/{file_dem}",
+                # 'file_building': f"{workspace}/api_data/{project}/{file_building}",
+                # 'file_landuse': f"{workspace}/api_data/{project}/{file_landuse}",
+                # 'file_dem_building': f"{workspace}/api_data/{project}/{file_dem_building}",
+                # 'file_seamask': f"{workspace}/api_data/{project}/{file_seamask}"
+
+                # TEST: This is a simulated response for testing purposes
+                'file_dem': "s3://saferplaces.co/Directed/Rimini/dtm_cropped_32633.tif",
+
             }, 
             'id': 'saferplacesapi.SaferBuildingsProcessor',
             'message': {
                 'body': {
                     'result': { 
-                        's3_uri': f"{os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')}/user=={self.graph_state.get('user_id', 'test')}/saferbuildings-out/Rimini_coast_flooded_deb-2407.geojson"
+                        # 's3_uri': f"{os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')}/user=={self.graph_state.get('user_id', 'test')}/saferbuildings-out/Rimini_coast_flooded_deb-2407.geojson"
+                        'demo': 'demo :('
                     }
                 }
             }
@@ -232,32 +277,22 @@ class DigitalTwinTool(BaseAgentTool):
         # TODO: Check if the response is valid
         
         tool_response = {
-            'saferbuildings_response': api_response['message']['body']['result'],
+            'digitaltwin_response': api_response,
             
             # TODO: Move in a method createMapActions()
             'map_actions': [
                 {
                     'action': 'new_layer',
                     'layer_data': {
-                        'name': 'saferbuildings-water',  # TODO: add a autoincrement code
+                        'name': 'digital twin dem',  # TODO: add a autoincrement code
                         'type': 'raster',
-                        'src': kwargs['water']
-                        # TODO: style for leafmap (?)
-                    }
-                },
-                {
-                    'action': 'new_layer',
-                    'layer_data': {
-                        'name': 'saferbuildings-out',   # TODO: add a autoincrement code (same as the water layer)
-                        'type': 'vector',
-                        'src': api_response['files']['file_building'],
-                        # TODO: style for leafmap (?) 
+                        'src': api_response['files']['file_dem'],
                         'styles': [
-                            { 'name': 'flooded buildings', 'type': 'categoric', 'property': 'is_flooded', 'colormap': { 'true': '#FF0000', 'false': '#00FF00'} },
-                            # { 'name': 'flood depth', 'type': 'numeric', 'property': 'wd_median', 'colormap': { 0: '#FFFFFF', 0.2: "#00D9FF", 0.4: "#4D7BE5", 0.6:"#9934E7", 0.8:"#FF0073" } }
+                            { 'name': 'dtm', 'type': 'scalar', 'colormap': 'viridis' }
                         ]
                     }
                 }
+                # TODO: Add action for each file (see above)
             ]
         }
         
@@ -268,7 +303,7 @@ class DigitalTwinTool(BaseAgentTool):
     
     # DOC: Back to a consisent state
     def _on_tool_end(self):
-        self.execution_confirmed = True
+        self.execution_confirmed = False
         self.output_confirmed = True
         
     

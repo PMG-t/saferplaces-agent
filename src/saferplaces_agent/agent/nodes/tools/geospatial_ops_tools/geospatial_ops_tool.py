@@ -106,7 +106,11 @@ class GeospatialOpsTool(BaseAgentTool):
                 layer_descriptions.append('\n'.join(layer_description))
             return '\n\n'.join(layer_descriptions)
                 
-                
+        print('\n\n' + '-'*80 + '\n')
+        print(f'layers: {self.graph_state.get("layer_registry", [])}')
+        print('\n')
+        print(f'kwargs: {kwargs}')
+        print('\n' + '-'*80 + '\n')    
         
         output = utils.ask_llm(
             role='system',

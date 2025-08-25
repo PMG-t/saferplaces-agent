@@ -157,7 +157,7 @@ class SaferRainTool(BaseAgentTool):
             args_schema = SaferRainInputSchema,
             **kwargs
         )
-        self.execution_confirmed = True
+        self.execution_confirmed = False
         self.output_confirmed = True
 
 
@@ -168,7 +168,15 @@ class SaferRainTool(BaseAgentTool):
     
     # DOC: Inference rules ( i.e.: from location name to bbox ... )
     def _set_args_inference_rules(self) -> dict:
-        return dict()
+        def infer_water(**kwargs):
+            """Infer water file path based on the user ID."""
+            water = kwargs.get("water", f"saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/safer-rain-water.tif")
+            return water
+
+        infer_rules = {
+            "water": infer_water
+        }
+        return infer_rules
         
     
     # DOC: Execute the tool → Build notebook, write it to a file and return the path to the notebook and the zarr output file
@@ -178,33 +186,63 @@ class SaferRainTool(BaseAgentTool):
         **kwargs: Any,  # dict[str, Any] = None,
     ): 
         # DOC: Call the SaferBuildings API ...
-        api_root_local = "http://localhost:5000" # TEST: only when running locally
-        api_url = f"{os.getenv('SAFERPLACES_API_ROOT')}/processes/safer-rain-process/execution"
-        payload = { 
-            "inputs": kwargs  | {
-                "token": os.getenv("SAFERPLACES_API_TOKEN"),
-                "user": os.getenv("SAFERPLACES_API_USER"),
-            } | {
-                "water":  f"{os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')}/user=={self.graph_state.get('user_id', 'test')}/safer-rain-out.tif"
-            } | {
-                "debug": True,  # TEST: enable debug mode
-            }
-        }
-        print(f"Executing {self.name} with args: {payload}")
-        response = requests.post(api_url, json=payload)
-        print(f"Response status code: {response.status_code} - {response.content}")
-        response = response.json() 
+        # api_root_local = "http://localhost:5000" # TEST: only when running locally
+        # api_url = f"{os.getenv('SAFERPLACES_API_ROOT')}/processes/safer-rain-process/execution"
+        # payload = { 
+        #     "inputs": kwargs  | {
+        #         "token": os.getenv("SAFERPLACES_API_TOKEN"),
+        #         "user": os.getenv("SAFERPLACES_API_USER"),
+        #     } | {
+        #         "debug": True,  # TEST: enable debug mode
+        #     }
+        # }
+        # print(f"Executing {self.name} with args: {payload}")
+        # response = requests.post(api_url, json=payload)
+        # print(f"Response status code: {response.status_code} - {response.content}")
+        # response = response.json() 
         # # TODO: Check output_code ...
+
+        # TEST: Simulate a response for testing purposes
+        api_response = {
+            # DOC: Use this when running with true API
+            # 'water_depth_file': kwargs.get('water', f"saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/safer-rain-water.tif"),
+            
+            # TEST: This is a simulated response for testing purposes
+            'water_depth_file': "s3://saferplaces.co/Directed/data-fabric-rwl2/Rimini_coast_cropped_buildings_rain_240mm.tif",
+
+            'id': 'saferplacesapi.SaferBuildingsProcessor'
+        }
+
+        # TODO: Check if the response is valid
         
+        tool_response = {
+            'saferrain_response': api_response,
+            
+            # TODO: Move in a method createMapActions()
+            'map_actions': [
+                {
+                    'action': 'new_layer',
+                    'layer_data': {
+                        'name': 'digital twin dem',  # TODO: add a autoincrement code
+                        'type': 'raster',
+                        'src': api_response['water_depth_file'],
+                        'styles': [
+                            { 'name': 'waterdepth', 'type': 'scalar', 'colormap': 'blues' }
+                        ]
+                    }
+                }
+                # TODO: Add action for each file (see above)
+            ]
+        }
         
         print('\n', '-'*80, '\n')
         
-        return dict()
+        return tool_response
         
     
     # DOC: Back to a consisent state
     def _on_tool_end(self):
-        self.execution_confirmed = True
+        self.execution_confirmed = False
         self.output_confirmed = True
         
     

@@ -18,4 +18,4 @@ class BaseGraphState(MessagesState):
     user_id: str = None
     node_history: Annotated[Sequence[str], merge_sequences] = []
     node_params: Annotated[dict, merge_dictionaries] = dict()
-    layer_registry: Annotated[Sequence[str], merge_sequences] = []
+    layer_registry: list[dict] = []
