@@ -90,7 +90,8 @@ SAFERPLACES_API_TOOL_HANDLER = "saferplaces_api_tool_handler"
 SAFERPLACES_API_TOOL_INTERRUPT = "saferplaces_api_tool_interrupt"
 
 
-
+DIGITAL_TWIN_TOOL = "digital_twin_tool"
+SAFER_RAIN_TOOL = "safer_rain_tool"
 SAFERBUILDINGS_TOOL = "saferbuildings_tool"
 
 # ENDREGION: [SaferPlacesAPI Subgraph]

@@ -18,7 +18,11 @@ from agent.nodes.subgraphs.create_project import create_project_subgraph_interfa
 from agent.nodes.subgraphs.flooding_rainfall import flooding_rainfall_subgraph_interface_tool
 from agent.nodes.tools import (
     DemoWeatherTool,
+
+    DigitalTwinTool,
+    SaferRainTool,
     SaferBuildingsTool,
+    
     GeospatialOpsTool
 )
 
@@ -27,8 +31,10 @@ from agent.nodes.tools import (
 demo_weather_tool = DemoWeatherTool()
 
 tools_map = dict()
-tools_map[N.CREATE_PROJECT_SUBGRAPH_INTERFACE_TOOL] = create_project_subgraph_interface_tool
-tools_map[N.FLOODING_RAINFALL_SUBGRAPH_INTERFACE_TOOL] = flooding_rainfall_subgraph_interface_tool
+# tools_map[N.CREATE_PROJECT_SUBGRAPH_INTERFACE_TOOL] = create_project_subgraph_interface_tool
+# tools_map[N.FLOODING_RAINFALL_SUBGRAPH_INTERFACE_TOOL] = flooding_rainfall_subgraph_interface_tool
+tools_map[N.DIGITAL_TWIN_TOOL] = DigitalTwinTool()
+tools_map[N.SAFER_RAIN_TOOL] = SaferRainTool()
 tools_map[N.SAFERBUILDINGS_TOOL] = SaferBuildingsTool()
 tools_map[N.GEOSPATIAL_OPS_TOOL] = GeospatialOpsTool()
 # tool_map[demo_weather_tool.name] = demo_weather_tool
@@ -73,11 +79,13 @@ def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESS
             
             if tool_call['name'] == demo_weather_tool.name:
                 return Command(goto = N.DEMO_SUBGRAPH, update = { "messages": [ ai_message ], "node_history": [N.CHATBOT, N.DEMO_SUBGRAPH] })
+            
             elif tool_call['name'] == N.CREATE_PROJECT_SUBGRAPH_INTERFACE_TOOL:
                 return Command(goto = N.CREATE_PROJECT_SUBGRAPH, update = { "messages": [], "node_history": [N.CHATBOT, N.CREATE_PROJECT_SUBGRAPH] })
             elif tool_call['name'] == N.FLOODING_RAINFALL_SUBGRAPH_INTERFACE_TOOL:
                 return Command(goto = N.FLOODING_RAINFALL_SUBGRAPH, update = { "messages": [], "node_history": [N.CHATBOT, N.FLOODING_RAINFALL_SUBGRAPH] })
-            elif tool_call['name'] == N.SAFERBUILDINGS_TOOL:
+            
+            elif tool_call['name'] in (N.DIGITAL_TWIN_TOOL, N.SAFER_RAIN_TOOL, N.SAFERBUILDINGS_TOOL):
                 return Command(goto = N.SAFERPLACES_API_SUBGRAPH, update = { "messages": [ai_message], "node_history": [N.CHATBOT, N.SAFERPLACES_API_SUBGRAPH] })
             elif tool_call['name'] == N.GEOSPATIAL_OPS_TOOL:
                 return Command(goto = N.SAFERPLACES_API_SUBGRAPH, update = { "messages": [ai_message], "node_history": [N.CHATBOT, N.SAFERPLACES_API_SUBGRAPH] })

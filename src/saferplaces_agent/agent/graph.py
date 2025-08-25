@@ -4,7 +4,7 @@ Defining agent graph
 
 from langgraph.graph import StateGraph
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 
 from agent import names as N
 
@@ -50,5 +50,5 @@ graph_builder.add_edge(N.FLOODING_RAINFALL_SUBGRAPH, N.CHATBOT)
 graph_builder.add_edge(N.SAFERPLACES_API_SUBGRAPH, N.CHATBOT)
 
 # DOC: build graph
-graph = graph_builder.compile() # .compile(checkpointer = MemorySaver())   # REF: when launch with `langgraph dev` command a message says it is not necessary ... 
+graph = graph_builder.compile(checkpointer = InMemorySaver())   # REF: when launch with `langgraph dev` command a message says it is not necessary ... 
 graph.name = N.GRAPH

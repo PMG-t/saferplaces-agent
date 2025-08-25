@@ -13,6 +13,8 @@ from .flooding_rainfall_tools import (
 )
 
 from .saferplaces_api_tools import (
+    DigitalTwinTool,
+    SaferRainTool,
     SaferBuildingsTool,
 )
 

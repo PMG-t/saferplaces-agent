@@ -115,7 +115,7 @@ class BaseAgentTool(BaseTool):
                 interrupt_reason = "Please confirm the execution of the tool with the provided arguments.",
                 interrupt_data = {
                     "args": tool_args,
-                    "args_schema": self.args_schema.model_fields,
+                    # "args_schema": self.args_schema.model_fields # !!!: this could cause exception 'TypeError: Type is not msgpack serializable: FieldInfo'
                 }
             )
             

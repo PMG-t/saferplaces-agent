@@ -32,7 +32,7 @@ class SaferBuildingsInputSchema(BaseModel):
 
     # ----------------------------- Data sources ------------------------------
     water: Optional[str] = Field(
-        default=None,
+        # DOC: This is the only mandatory input
         title="Water-depth raster",
         description=(
             "Path to the water-depth raster (e.g., GeoTIFF). "
@@ -66,7 +66,7 @@ class SaferBuildingsInputSchema(BaseModel):
         title="Buildings provider (on-the-fly fetch)",
         description=(
             "Provider used to fetch buildings when no file is supplied. "
-            "Allowed values: `OVERTURE`, `RER-REST/*`, `VENEZIA-WFS/*`, `VENEZIA-WFS-CRITICAL-SITES`. "
+            "Allowed values: `OVERTURE`, `RER-REST/*`, `VENEZIA-WFS/*`, `VENEZIA-WFS-CRITICAL-SITES`. Where * is a wildcard for any subpath. No other values are allowed. Prefer `OVERTURE` if not specified"
             "Patterns with `/*` indicate specific endpoints/collections."
         ),
         examples=[
@@ -223,10 +223,10 @@ class SaferBuildingsInputSchema(BaseModel):
         validation_alias=AliasChoices("summary_on"),
     )
 
-    class Config:
-        # Impedisci campi sconosciuti; abilita uso dei nomi/alias indifferentemente
-        extra = "forbid"
-        populate_by_name = True
+    # class Config:
+    #     # Impedisci campi sconosciuti; abilita uso dei nomi/alias indifferentemente
+    #     extra = "forbid"
+    #     populate_by_name = True
         
 
 
@@ -262,25 +262,28 @@ class SaferBuildingsTool(BaseAgentTool):
             args_schema = SaferBuildingsInputSchema,
             **kwargs
         )
-        self.execution_confirmed = True
+        self.execution_confirmed = False
         self.output_confirmed = True
         
     
     # DOC: Validation rules ( i.e.: valid init and lead time ... ) 
     def _set_args_validation_rules(self) -> dict:
-        
-        # return {
-        #     'area': [
-        #         lambda **ka: f"Invalid area coordinates: {ka['area']}. It should be a list of 4 float values representing the bounding box [min_x, min_y, max_x, max_y]." 
-        #             if isinstance(ka['area'], list) and len(ka['area']) != 4 else None  
-        #     ]
-        # }
+        # DOC: No specific validation rules for this tool
         return dict()
         
     
     # DOC: Inference rules ( i.e.: from location name to bbox ... )
     def _set_args_inference_rules(self) -> dict:
-        return dict()
+        
+        def infer_out(**kwargs):
+            out = kwargs.get('out', None)
+            outname = "saferbuildings_{suffix}.geojson".format(suffix = utils.juststem(out) if out is not None else datetime.datetime.now(tz=datetime.timezone.utc).strftime('%Y%m%dT%H%M%S'))
+            return f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/{outname}"
+        
+        infer_rules = {
+            'out': infer_out
+        }
+        return infer_rules
         
     
     # DOC: Execute the tool → Build notebook, write it to a file and return the path to the notebook and the zarr output file
@@ -289,6 +292,7 @@ class SaferBuildingsTool(BaseAgentTool):
         /,
         **kwargs: Any,  # dict[str, Any] = None,
     ): 
+        print('\n', '############### called SaferBuildingsTool._execute() ###############', '\n')
         # DOC: Call the SaferBuildings API ...
         # api_root_local = "http://localhost:5000" # TEST: only when running locally
         # api_url = f"{os.getenv('SAFERPLACES_API_ROOT')}/processes/safer-buildings-process/execution"
@@ -358,13 +362,15 @@ class SaferBuildingsTool(BaseAgentTool):
         }
         
         print('\n', '-'*80, '\n')
+        print('toole_response:', tool_response)
+        print('\n', '-'*80, '\n')
         
         return tool_response
         
     
     # DOC: Back to a consisent state
     def _on_tool_end(self):
-        self.execution_confirmed = True
+        self.execution_confirmed = False
         self.output_confirmed = True
         
     
