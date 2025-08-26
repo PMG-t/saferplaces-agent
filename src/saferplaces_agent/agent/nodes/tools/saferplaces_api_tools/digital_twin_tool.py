@@ -237,7 +237,7 @@ class DigitalTwinTool(BaseAgentTool):
         #         "token": os.getenv("SAFERPLACES_API_TOKEN"),
         #         "user": os.getenv("SAFERPLACES_API_USER"),
         #     } | {
-        #         "workspace": f"saferplaces.co/SaferPlaces-Agent/dev')/user=={self.graph_state.get('user_id', 'test')}",
+        #         "workspace": f"saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}",
         #         "project": "saferplaces-agent"    # TODO: variable from state (setted from client session in graph update like user_id)
         #     } | {
         #         "debug": True,  # TEST: enable debug mode
