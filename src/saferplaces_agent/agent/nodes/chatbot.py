@@ -64,13 +64,15 @@ def chatbot_update_messages(state: BaseGraphState):
 
 def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESSAGES, N.DEMO_SUBGRAPH, N.CREATE_PROJECT_SUBGRAPH, N.FLOODING_RAINFALL_SUBGRAPH, N.SAFERPLACES_API_SUBGRAPH]]:     # type: ignore
     state["messages"] = state.get("messages", [])
+
+    print(f'----layers: {state.get("layer_registry", [])}')
     
     if len(state["messages"]) > 0:
         
         if state.get("node_params", dict()).get(N.CHATBOT_UPDATE_MESSAGES, None) is not None:
             return Command(goto=N.CHATBOT_UPDATE_MESSAGES)
         
-        llm_with_tools = set_tool_choice(tool_choice = state.get("node_params", dict()).get(N.CHATBOT, dict()).get("tool_choice", None))
+        llm_with_tools = set_tool_choice(tool_choice = state.get("avaliable_tools", list()))
         
         ai_message = llm_with_tools.invoke(state["messages"])
         
