@@ -1,10 +1,12 @@
 import os
+import io
 import uuid
 import base64
 import datetime
 from dateutil import relativedelta
 from enum import Enum
 import requests
+import contextlib
 
 from typing import Optional, Union, List, Dict, Any
 from pydantic import BaseModel, Field, AliasChoices, field_validator, model_validator
@@ -61,6 +63,7 @@ class GeospatialOpsInputSchema(BaseModel):
             "for visualization (e.g., intersection, clip, union). "
             "For descriptive/statistical operations (e.g., bounding box, centroid, raster statistics), "
             "this should normally be None unless the user explicitly requests a layer."
+            "The name should follow these rules: no spaces, lowercase, ends with .geojson or .tif based on the requested output data type."
         ),
         examples=[
             "intersected_buildings.geojson",
@@ -124,8 +127,7 @@ class GeospatialOpsTool(BaseAgentTool):
                     1. **Do not create a layer** if the request is descriptive or statistical:
                     - Examples: bounding box, centroid, area, perimeter, maximum/minimum/mean value of a raster, summary statistics.
                     - In these cases, return "None".
-                    2. **Create a layer** only if the operation produces new or modified geospatial data 
-                    that could be visualized on a map:
+                    2. **Create a layer** only if the operation produces new or modified geospatial data that could be visualized on a map:
                     - Examples: intersection, union, difference, clip, dissolve, spatial filtering that returns a dataset.
                     3. If the user explicitly asks to save the result as a layer, always propose a filename.
 
@@ -149,7 +151,7 @@ class GeospatialOpsTool(BaseAgentTool):
                     return None
                 output_layer = output_layer.strip()
                 output_layer = f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/{output_layer}"
-            # TODO: SHould come fron env variable
+            # TODO: Should come fron env variable
             elif not (kwargs['output_layer'].startswith('s3://saferplaces.co/') or kwargs['output_layer'].startswith('https://s3.us-east-1.amazonaws.com/saferplaces.co/')):
                 output_layer = utils.justfname(kwargs['output_layer'])
                 output_layer = f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/{output_layer}"
@@ -168,76 +170,95 @@ class GeospatialOpsTool(BaseAgentTool):
         **kwargs: Any,  # dict[str, Any] = None,
     ):
 
-        def describe_layer_registry():
-            """Describe the layers available in the registry."""
-            layers = self.graph_state.get('layer_registry', [])
-            if not layers:
-                return "No layers available."
-            layer_descriptions = []
-            for layer in layers:
-                layer_description = []
-                layer_description.extend([
-                    f"Layer: {layer['name']}",
-                    f"- type: {layer['type']}",
-                    f"- src: {layer['src']}"
-                ])
-                layer_descriptions.append('\n'.join(layer_description))
-            return '\n\n'.join(layer_descriptions)
+        if not self.output_confirmed:
+            def describe_layer_registry():
+                """Describe the layers available in the registry."""
+                layers = self.graph_state.get('layer_registry', [])
+                if not layers:
+                    return "No layers available."
+                layer_descriptions = []
+                for layer in layers:
+                    layer_description = []
+                    layer_description.extend([
+                        f"Layer: {layer['name']}",
+                        f"- type: {layer['type']}",
+                        f"- src: {layer['src']}"
+                    ])
+                    layer_descriptions.append('\n'.join(layer_description))
+                return '\n\n'.join(layer_descriptions)
 
-        additional_info = '\n'.join(
-            [f'- {key}: {value}' for key, value in kwargs.items() if key not in ['prompt', 'output_layer']])
-        additional_info = f"Additional and useful informations:\n{additional_info}" if additional_info else ""
+            additional_info = '\n'.join(
+                [f'- {key}: {value}' for key, value in kwargs.items() if key not in ['prompt', 'output_layer']])
+            additional_info = f"Additional and useful informations:\n{additional_info}" if additional_info else ""
 
-        print('\n\n' + '-'*80 + '\n')
-        print(f'layers: {self.graph_state.get("layer_registry", [])}')
-        print(f'kwargs: {kwargs}')
-        print(f'additional_info: {additional_info}\n')
-        print('\n' + '-'*80 + '\n')
+            print('\n\n' + '-'*80 + '\n')
+            print(f'layers: {self.graph_state.get("layer_registry", [])}')
+            print(f'kwargs: {kwargs}')
+            print(f'additional_info: {additional_info}\n')
+            print('\n' + '-'*80 + '\n')
 
-        output = utils.ask_llm(
-            role='system',
-            message=f"""You are a Python code generator specialized in geospatial operations. 
+            output = utils.ask_llm(
+                role='system',
+                message=f"""You are a Python code generator specialized in geospatial operations. 
 
-            Your task: Given a user request describing a geospatial data operation, output only valid Python code that produces the requested data. 
+                Your task: Given a user request describing a geospatial data operation, output only valid Python code that produces the requested data. 
 
-            Constraints:
+                Constraints:
 
-            1. Always respond with Python code only. Do NOT include explanations, text, or commentary.  
-            2. You may use only the following libraries: geopandas, shapely, pandas, fiona, rasterio, pyproj, numpy. No other libraries.  
-            3. You can produce results based on:  
-            a) Your internal geographic knowledge (e.g., bounding boxes of known cities, coordinates of countries).  
-            b) Provided layers, given usually as S3 URL.
-            4. If the user requires to produce a new layer, ensure the code stores the results in the layer provided in the `output_layer` argument.
+                1. Always respond with Python code only. Do NOT include explanations, text, or commentary.  
+                2. You may use only the following libraries: geopandas, shapely, pandas, fiona, rasterio, pyproj, numpy. No other libraries.  
+                3. You can produce results based on:  
+                a) Your internal geographic knowledge (e.g., bounding boxes of known cities, coordinates of countries).  
+                b) Provided layers, given usually as S3 URL.
+                4. If the user requires to produce a new layer, ensure the code stores the results in the layer provided in the `output_layer` argument.
 
-            Instructions:
+                Instructions:
 
-            - At the end of the code produce print statement tha show some information about the operation performed and its output.
-            - The code should be self-contained and executable, assuming the required libraries are imported and any input layers are accessible.  
-            - If the user request requires working with a layer, assume it is provided as a variable `layer` (loaded with geopandas.read_file or similar) or as a file path / S3 URL string.  
-            - Use proper geospatial operations: intersections, within, filtering by bbox, or attribute-based selections.  
-            - Produce only data, e.g., a Raster or Vector layer, a Pandas DataFrame, a GeoPandas GeoDataFrame, a shapely geometry, or a dictionary summarizing geometry stats.  
-            - Do NOT print, log, or output anything else.  
-            - Do not perform file system operations outside of reading allowed layers.  
-            - Do not import os, sys, subprocess, or any unsafe modules.  
+                - At the end of the code produce print statement tha show some information about the operation performed and its output.
+                - The code should be self-contained and executable, assuming the required libraries are imported and any input layers are accessible.  
+                - If the user request requires working with a layer, assume it is provided as a variable `layer` (loaded with geopandas.read_file or similar) or as a file path / S3 URL string.  
+                - Use proper geospatial operations: intersections, within, filtering by bbox, or attribute-based selections.  
+                - Produce only data, e.g., a Raster or Vector layer, a Pandas DataFrame, a GeoPandas GeoDataFrame, a shapely geometry, or a dictionary summarizing geometry stats.  
+                - Do NOT print, log, or output anything else.  
+                - Do not perform file system operations outside of reading allowed layers.  
+                - Do not import os, sys, subprocess, or any unsafe modules.  
 
-            User request:
-            "{kwargs['prompt']}"
-            Output layer:
-            "{kwargs.get('output_layer', 'None')}"
+                User request:
+                "{kwargs['prompt']}"
+                Output layer:
+                "{kwargs.get('output_layer', 'None')}"
+                
+                You have access to the following layers:
+                {describe_layer_registry()}
+                
+                {additional_info}
+                """,
+                eval_output=False
+            )
             
-            You have access to the following layers:
-            {describe_layer_registry()}
-            
-            {additional_info}
-            """,
-            eval_output=False
-        )
-        
-        callback_actions = {
-            'callback_actions': {
+
+            tool_response = {
+                'generated_code': output
+            }
+
+        else:
+
+            generated_code = self.output['generated_code']
+            generated_code = generated_code.replace('```python', '').replace('```', '').strip()
+            # execute the code and capture the output
+            buffer = io.StringIO()
+
+            # Reindirizziamo stdout dentro il buffer mentre eseguiamo il codice
+            with contextlib.redirect_stdout(buffer):
+                exec(generated_code)
+
+            # Recuperiamo l'output come stringa
+            output = buffer.getvalue()
+
+            map_actions = {
                 'map_actions': [
                     {
-                        'action': 'new-layer',
+                        'action': 'new_layer',
                         'layer_data': {
                             'name': utils.juststem(kwargs['output_layer']),
                             'type': 'vector' if kwargs['output_layer'].endswith('.geojson') else 'raster',
@@ -245,25 +266,12 @@ class GeospatialOpsTool(BaseAgentTool):
                         }
                     }
                 ]
-            }
-        } if kwargs.get('output_layer', None) else dict()
-        
+            } if kwargs.get('output_layer', None) else dict()
 
-        tool_response = {
-            # TODO: Geospatial ops layer info dict
-            # TODO: Map actions to be executed by the frontend (new-layer)
-            'generated_code': output,
-            'agent_actions': [
-                {
-                    'action': 'run_code',
-                    'action_id': str(uuid.uuid4()),
-                    'code_data': {
-                        'code': output,
-                        ** callback_actions,
-                    }
-                }
-            ]
-        }
+            tool_response = {
+                'execution_output': output,
+                ** map_actions
+            }
 
         print('\n', '-'*80, '\n')
 
