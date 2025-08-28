@@ -1,4 +1,5 @@
 import os
+import uuid
 import base64
 import datetime
 from dateutil import relativedelta
@@ -231,11 +232,37 @@ class GeospatialOpsTool(BaseAgentTool):
             """,
             eval_output=False
         )
+        
+        callback_actions = {
+            'callback_actions': {
+                'map_actions': [
+                    {
+                        'action': 'new-layer',
+                        'layer_data': {
+                            'name': utils.juststem(kwargs['output_layer']),
+                            'type': 'vector' if kwargs['output_layer'].endswith('.geojson') else 'raster',
+                            'src': kwargs['output_layer']
+                        }
+                    }
+                ]
+            }
+        } if kwargs.get('output_layer', None) else dict()
+        
 
         tool_response = {
             # TODO: Geospatial ops layer info dict
             # TODO: Map actions to be executed by the frontend (new-layer)
-            'generated_code': output
+            'generated_code': output,
+            'agent_actions': [
+                {
+                    'action': 'run_code',
+                    'action_id': str(uuid.uuid4()),
+                    'code_data': {
+                        'code': output,
+                        ** callback_actions,
+                    }
+                }
+            ]
         }
 
         print('\n', '-'*80, '\n')

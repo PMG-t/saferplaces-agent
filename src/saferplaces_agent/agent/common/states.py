@@ -20,3 +20,5 @@ class BaseGraphState(MessagesState):
     node_params: Annotated[dict, merge_dictionaries] = dict()
     layer_registry: list[dict] = []
     avaliable_tools: list[str] = []
+    
+    agent_actions: Annotated[Sequence[dict], merge_sequences] = []
