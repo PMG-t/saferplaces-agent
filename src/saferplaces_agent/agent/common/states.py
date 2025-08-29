@@ -15,10 +15,10 @@ from agent.common.utils import merge_sequences, merge_dictionaries
 
 class BaseGraphState(MessagesState):
     """Basic state"""
-    user_id: str = None
     node_history: Annotated[Sequence[str], merge_sequences] = []
     node_params: Annotated[dict, merge_dictionaries] = dict()
     layer_registry: list[dict] = []
     avaliable_tools: list[str] = []
     
-    agent_actions: Annotated[Sequence[dict], merge_sequences] = []
+    user_id: str = None
+    project_id: str = None

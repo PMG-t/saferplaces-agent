@@ -32,24 +32,13 @@ saferplaces_api_tools = list(saferplaces_api_tools_dict.values())
 llm_with_saferplaces_api_tools = utils._base_llm.bind_tools(saferplaces_api_tools)
 
 
-# # DOC: end acallback for BaseToolHandlerNode (used to put 'agent_actions' in state)
-def agent_action_register_callback(tool_output):
-    """Callback to register agent actions in the state."""
-    print(f'\n-----Agent actions registered: {tool_output.get("agent_actions", [])}\n')
-    if 'agent_actions' in tool_output:
-        return { 'agent_actions': tool_output['agent_actions'] }
-    return dict()
-
-
 # DOC: Base tool handler: runs the tool, if tool interrupt go to interrupt node handler
 saferplaces_api_tool_handler = BaseToolHandlerNode(
     state = BaseGraphState,
     tool_handler_node_name = N.SAFERPLACES_API_TOOL_HANDLER,
     tool_interrupt_node_name = N.SAFERPLACES_API_TOOL_INTERRUPT,
     tools = saferplaces_api_tools_dict,
-    additional_ouput_state = { 'requested_agent': None, 'node_params': dict() },
-    
-    on_handle_end_callback = agent_action_register_callback
+    additional_ouput_state = { 'requested_agent': None, 'node_params': dict() }
 )
 
 

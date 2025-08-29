@@ -66,7 +66,6 @@ def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESS
     state["messages"] = state.get("messages", [])
 
     print(f'----layers: {state.get("layer_registry", [])}')
-    print(f'----agent_actions: {state.get("agent_actions", [])}')
     
     if len(state["messages"]) > 0:
         
