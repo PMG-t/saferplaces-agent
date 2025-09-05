@@ -35,13 +35,14 @@ class SaferBuildingsInputSchema(BaseModel):
         # DOC: This is the only mandatory input
         title="Water-depth raster",
         description=(
-            "Path to the water-depth raster (e.g., GeoTIFF). "
-            "Required to compute flooding."
+            "Reference to a water-depth raster dataset (GeoTIFF). "
+            "This is the only mandatory input. Required to compute flooding. "
+            "It has to be an AWS S3 URI / URL. "
+            "It could be referred to the source of one layer listed in the 'layer_registry' field state."
         ),
         examples=[
-            "/data/floods/water_depth.tif",
-            "C:\\data\\wd_2024_05.tif",
-            "/vsis3/my-bucket/flood/wd.tif",
+            "S3://bucket-name/some-prefix/water_depth.tif",
+            "https://s3.us-east-1.amazonaws.com/bucket-name/some-prefix/water_depth.tif",
         ],
         validation_alias=AliasChoices("water", "waterdepth", "wd", "water_filename"),
     )
@@ -50,13 +51,12 @@ class SaferBuildingsInputSchema(BaseModel):
         default=None,
         title="Buildings (vector)",
         description=(
-            "Path to the buildings vector dataset (GeoPackage/GeoJSON/Shapefile). "
+            "Reference to a buildings vector dataset (GeoPackage, GeoJSON, Shapefile). "
             "If omitted, a `provider` must be given to fetch buildings on-the-fly."
         ),
         examples=[
-            "/data/buildings.gpkg",
-            "/data/buildings.geojson",
-            "C:\\data\\buildings.shp",
+            "S3://saferplaces.co/SaferPlaces-Agent/dev/saferbuildings-tool/buildings.gpkg",
+            "https://s3.us-east-1.amazonaws.com/saferplaces.co/SaferPlaces-Agent/dev/saferbuildings-tool/buildings.geojson",
         ],
         validation_alias=AliasChoices("building", "buildings", "buildings_filename"),
     )
@@ -246,9 +246,9 @@ class SaferBuildingsTool(BaseAgentTool):
             • Required inputs: a water-depth raster path; plus either a buildings file path OR a provider (OVERTURE, RER-REST/*, VENEZIA-WFS/*, or VENEZIA-WFS-CRITICAL-SITES).  
             • Water-depth threshold: depths ≥ wd_thresh (meters, default 0.5) are considered flooded.  
             • Flood detection mode:  
-            - BUFFER: search for flood around buildings (buffered vicinity),  
+            - BUFFER: default behaviour, search for flood around buildings (buffered vicinity),  
             - IN-AREA: search for flood inside the building footprint,  
-            - ALL: apply both. Default is BUFFER.  
+            - ALL: apply both.  
             • Spatial extent: optional bbox as a list of four floats in the exact order [minx, miny, maxx, maxy], coordinates in EPSG:4326. If omitted, the raster’s total bounds are used.  
             • Coordinate reference system: t_srs sets the output EPSG (e.g., "EPSG:4326"). If not provided, the buildings CRS is used when available, otherwise the raster CRS.  
             • Provider filters: optional JSON (string or dict) to pre-filter provider features.  
@@ -274,13 +274,32 @@ class SaferBuildingsTool(BaseAgentTool):
     
     # DOC: Inference rules ( i.e.: from location name to bbox ... )
     def _set_args_inference_rules(self) -> dict:
+
+        def infer_water(**kwargs):
+            water = kwargs.get('water', None)
+            if not water.startswith(('s3://', 'http://', 'https://')):
+                water_name = utils.juststem(water)
+                candidates = [layer['src'] for layer in self.graph_state.get('layer_registry', list()) if water_name in layer.get('name', '') or water_name in layer.get('src', '')]
+                water = candidates[0] if candidates else water
+            return water
+        
+        def infer_buildings(**kwargs):
+            buildings = kwargs.get('buildings', None)
+            if buildings is not None:
+                if not buildings.startswith(('s3://', 'http://', 'https://')):
+                    buildings_name = utils.juststem(buildings)
+                    candidates = [layer['src'] for layer in self.graph_state.get('layer_registry', list()) if buildings_name in layer.get('name', '') or buildings_name in layer.get('src', '')]
+                    buildings = candidates[0] if candidates else buildings
+            return buildings
         
         def infer_out(**kwargs):
             out = kwargs.get('out', None)
             outname = "saferbuildings_{suffix}.geojson".format(suffix = utils.juststem(out) if out is not None else datetime.datetime.now(tz=datetime.timezone.utc).strftime('%Y%m%dT%H%M%S'))
             return f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/{outname}"
-        
+            
         infer_rules = {
+            'water': infer_water,
+            'buildings': infer_buildings,
             'out': infer_out
         }
         return infer_rules
@@ -362,7 +381,7 @@ class SaferBuildingsTool(BaseAgentTool):
         }
         
         print('\n', '-'*80, '\n')
-        print('toole_response:', tool_response)
+        print('tool_response:', tool_response)
         print('\n', '-'*80, '\n')
         
         return tool_response
