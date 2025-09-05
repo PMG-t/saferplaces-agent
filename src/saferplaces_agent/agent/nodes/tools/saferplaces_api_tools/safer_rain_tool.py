@@ -220,17 +220,24 @@ class SaferRainTool(BaseAgentTool):
             
             # TODO: Move in a method createMapActions()
             'map_actions': [
-                {
-                    'action': 'new_layer',
-                    'layer_data': {
-                        'name': 'digital twin dem',  # TODO: add a autoincrement code
-                        'type': 'raster',
-                        'src': api_response['water_depth_file'],
-                        'styles': [
-                            { 'name': 'waterdepth', 'type': 'scalar', 'colormap': 'blues' }
-                        ]
-                    }
-                }
+                # {
+                #     'action': 'new_layer',
+                #     'layer_data': {
+                #         'name': 'digital twin dem',  # TODO: add a autoincrement code
+                #         'type': 'raster',
+                #         'src': api_response['water_depth_file'],
+                #         'styles': [
+                #             { 'name': 'waterdepth', 'type': 'scalar', 'colormap': 'blues' }
+                #         ]
+                #     }
+                # }
+                utils.map_action_new_layer(
+                    layer_name = 'digital twin dem',
+                    layer_src = api_response['water_depth_file'],
+                    layer_styles = [
+                        { 'name': 'waterdepth', 'type': 'scalar', 'colormap': 'blues' }
+                    ]
+                )
                 # TODO: Add action for each file (see above)
             ]
         }

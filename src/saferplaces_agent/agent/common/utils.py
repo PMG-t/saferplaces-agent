@@ -33,6 +33,9 @@ def guid():
 def hash_string(s, hash_method=hashlib.md5):
     return hash_method(s.encode('utf-8')).hexdigest()
 
+def s3uri_to_https(s3_uri):
+    return s3_uri.replace('s3://', 'https://s3.us-east-1.amazonaws.com/')
+
 
 def python_path():
     """ python_path - returns the path to the Python executable """
@@ -125,6 +128,8 @@ def ask_llm(role, message, llm=_base_llm, eval_output=False):
             # DOC: LLM can asnwer with a python code block, so we need to extract the code and evaluate it
             if type(content) is str and content.startswith('```python'):
                 content = content.split('```python')[1].split('```')[0]
+            if type(content) is str and content.startswith('```json'):
+                content = content.split('```json')[1].split('```')[0]
             
             # DOC: LLM can answer with a python dict but sometimes as json, so we need to convert some values from json to py
             content = re.sub(r'\bnull\b', 'None', content) # DOC: replace null with None
@@ -136,6 +141,20 @@ def ask_llm(role, message, llm=_base_llm, eval_output=False):
             pass
     return llm_out.content
 
+
+def map_action_new_layer(layer_name, layer_src, layer_styles=[]):
+    """Create a map action with the given type and data."""
+    layer_styles = { 'styles': layer_styles } if len(layer_styles) > 0 else dict()
+    action_new_layer = {
+        'action': 'new_layer',
+        'layer_data': {
+            'name': layer_name,
+            'type': 'vector' if layer_src.endswith('.geojson') else 'raster',   # TODO: add more extensions (e.g. .gpkg, .tif, tiff, geotiff, etc.)
+            'src': s3uri_to_https(layer_src),
+            ** layer_styles
+        }
+    }
+    return action_new_layer
 
 # ENDREGION: [LLM and Tools]
 
