@@ -18,4 +18,4 @@ from .nodes import (
 )
 
 from .graph import graph
-    
+from .graph_interface import GraphRegistry, GraphInterface

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+
 from typing import Sequence
 
 from langgraph.graph import MessagesState
@@ -15,6 +17,7 @@ from agent.common.utils import merge_sequences, merge_dictionaries
 
 class BaseGraphState(MessagesState):
     """Basic state"""
+    nowtime: str = datetime.datetime.now(tz=datetime.timezone.utc).replace(tzinfo=None).isoformat()
     node_history: Annotated[Sequence[str], merge_sequences] = []
     node_params: Annotated[dict, merge_dictionaries] = dict()
     layer_registry: list[dict] = []
