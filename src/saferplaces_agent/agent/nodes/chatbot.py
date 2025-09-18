@@ -22,6 +22,10 @@ from agent.nodes.tools import (
     DigitalTwinTool,
     SaferRainTool,
     SaferBuildingsTool,
+
+    ICON2IIngestorTool,
+    ICON2IRetrieverTool,
+    DPCRetrieverTool,
     
     GeospatialOpsTool
 )
@@ -31,11 +35,17 @@ from agent.nodes.tools import (
 demo_weather_tool = DemoWeatherTool()
 
 tools_map = dict()
+# INFO: ↓↓↓ CREATE_PROJECT_SUBGRAPH_INTERFACE_TOOL and FLOODING_RAINFALL_SUBGRAPH_INTERFACE_TOOL are not used in the chatbot, but they are still defined here for potential future use
 # tools_map[N.CREATE_PROJECT_SUBGRAPH_INTERFACE_TOOL] = create_project_subgraph_interface_tool
 # tools_map[N.FLOODING_RAINFALL_SUBGRAPH_INTERFACE_TOOL] = flooding_rainfall_subgraph_interface_tool
 tools_map[N.DIGITAL_TWIN_TOOL] = DigitalTwinTool()
 tools_map[N.SAFER_RAIN_TOOL] = SaferRainTool()
 tools_map[N.SAFERBUILDINGS_TOOL] = SaferBuildingsTool()
+
+tools_map[N.ICON2I_INGESTOR_TOOL] = ICON2IIngestorTool()
+tools_map[N.ICON2I_RETRIEVER_TOOL] = ICON2IRetrieverTool()
+tools_map[N.DPC_RETRIEVER_TOOL] = DPCRetrieverTool()
+
 tools_map[N.GEOSPATIAL_OPS_TOOL] = GeospatialOpsTool()
 # tool_map[demo_weather_tool.name] = demo_weather_tool
 
@@ -62,7 +72,7 @@ def chatbot_update_messages(state: BaseGraphState):
     return {'messages': messages, 'node_params': dict()}
 
 
-def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESSAGES, N.DEMO_SUBGRAPH, N.CREATE_PROJECT_SUBGRAPH, N.FLOODING_RAINFALL_SUBGRAPH, N.SAFERPLACES_API_SUBGRAPH]]:     # type: ignore
+def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESSAGES, N.DEMO_SUBGRAPH, N.CREATE_PROJECT_SUBGRAPH, N.FLOODING_RAINFALL_SUBGRAPH, N.SAFERPLACES_API_SUBGRAPH, N.SAFERCAST_API_SUBGRAPH]]:     # type: ignore
     state["messages"] = state.get("messages", [])
 
     print(f'----layers: {state.get("layer_registry", [])}')
@@ -85,13 +95,18 @@ def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESS
             if tool_call['name'] == demo_weather_tool.name:
                 return Command(goto = N.DEMO_SUBGRAPH, update = { "messages": [ ai_message ], "node_history": [N.CHATBOT, N.DEMO_SUBGRAPH] })
             
-            elif tool_call['name'] == N.CREATE_PROJECT_SUBGRAPH_INTERFACE_TOOL:
-                return Command(goto = N.CREATE_PROJECT_SUBGRAPH, update = { "messages": [], "node_history": [N.CHATBOT, N.CREATE_PROJECT_SUBGRAPH] })
-            elif tool_call['name'] == N.FLOODING_RAINFALL_SUBGRAPH_INTERFACE_TOOL:
-                return Command(goto = N.FLOODING_RAINFALL_SUBGRAPH, update = { "messages": [], "node_history": [N.CHATBOT, N.FLOODING_RAINFALL_SUBGRAPH] })
+            # INFO: ↓↓↓ CREATE_PROJECT_SUBGRAPH_INTERFACE_TOOL and FLOODING_RAINFALL_SUBGRAPH_INTERFACE_TOOL are not used in the chatbot, but they are still defined here for potential future use
+            # elif tool_call['name'] == N.CREATE_PROJECT_SUBGRAPH_INTERFACE_TOOL:
+            #     return Command(goto = N.CREATE_PROJECT_SUBGRAPH, update = { "messages": [], "node_history": [N.CHATBOT, N.CREATE_PROJECT_SUBGRAPH] })
+            # elif tool_call['name'] == N.FLOODING_RAINFALL_SUBGRAPH_INTERFACE_TOOL:
+            #     return Command(goto = N.FLOODING_RAINFALL_SUBGRAPH, update = { "messages": [], "node_history": [N.CHATBOT, N.FLOODING_RAINFALL_SUBGRAPH] })
             
             elif tool_call['name'] in (N.DIGITAL_TWIN_TOOL, N.SAFER_RAIN_TOOL, N.SAFERBUILDINGS_TOOL):
                 return Command(goto = N.SAFERPLACES_API_SUBGRAPH, update = { "messages": [ai_message], "node_history": [N.CHATBOT, N.SAFERPLACES_API_SUBGRAPH] })
+            
+            elif tool_call['name'] in (N.ICON2I_INGESTOR_TOOL, N.ICON2I_RETRIEVER_TOOL, N.DPC_RETRIEVER_TOOL):
+                return Command(goto = N.SAFERCAST_API_SUBGRAPH, update = { "messages": [ai_message], "node_history": [N.CHATBOT, N.SAFERCAST_API_SUBGRAPH] })
+            
             elif tool_call['name'] == N.GEOSPATIAL_OPS_TOOL:
                 return Command(goto = N.SAFERPLACES_API_SUBGRAPH, update = { "messages": [ai_message], "node_history": [N.CHATBOT, N.SAFERPLACES_API_SUBGRAPH] })
             

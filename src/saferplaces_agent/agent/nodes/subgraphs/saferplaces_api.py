@@ -18,12 +18,12 @@ from agent.nodes.base import BaseToolHandlerNode, BaseToolInterruptNode
 
 digital_twin_tool = DigitalTwinTool()
 safer_rain_tool = SaferRainTool()
-saferplaces_api_saferbuildings_tool = SaferBuildingsTool()
+saferbuildings_tool = SaferBuildingsTool()
 geospatial_ops_tool = GeospatialOpsTool()
 saferplaces_api_tools_dict = {
     digital_twin_tool.name: digital_twin_tool,
     safer_rain_tool.name: safer_rain_tool,
-    saferplaces_api_saferbuildings_tool.name: saferplaces_api_saferbuildings_tool,
+    saferbuildings_tool.name: saferbuildings_tool,
     geospatial_ops_tool.name: geospatial_ops_tool
 }
 saferplaces_api_tool_names = list(saferplaces_api_tools_dict.keys())

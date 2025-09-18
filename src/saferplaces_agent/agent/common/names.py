@@ -89,12 +89,24 @@ SAFERPLACES_API_SUBGRAPH = "saferplaces_api_subgraph"
 SAFERPLACES_API_TOOL_HANDLER = "saferplaces_api_tool_handler"
 SAFERPLACES_API_TOOL_INTERRUPT = "saferplaces_api_tool_interrupt"
 
-
 DIGITAL_TWIN_TOOL = "digital_twin_tool"
 SAFER_RAIN_TOOL = "safer_rain_tool"
 SAFERBUILDINGS_TOOL = "saferbuildings_tool"
 
 # ENDREGION: [SaferPlacesAPI Subgraph]
+
+# REGION: [SaferCastAPI Subgraph]
+
+SAFERCAST_API_SUBGRAPH = "safercast_api_subgraph"
+
+SAFERCAST_API_TOOL_HANDLER = "safercast_api_tool_handler"
+SAFERCAST_API_TOOL_INTERRUPT = "safercast_api_tool_interrupt"
+
+ICON2I_INGESTOR_TOOL = "icon2i_ingestor_tool"
+ICON2I_RETRIEVER_TOOL = "icon2i_retriever_tool"
+DPC_RETRIEVER_TOOL = "dpc_retriever_tool"
+
+# ENDREGION: [SaferCastAPI Subgraph]
 
 # REGION: [Geospatial Operations Subgraph]
 

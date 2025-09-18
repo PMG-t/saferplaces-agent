@@ -18,6 +18,12 @@ from .saferplaces_api_tools import (
     SaferBuildingsTool,
 )
 
+from .safercast_api_tools import (
+    ICON2IRetrieverTool,
+    ICON2IIngestorTool,
+    DPCRetrieverTool
+)
+
 from .geospatial_ops_tools import (
     GeospatialOpsTool
 )
