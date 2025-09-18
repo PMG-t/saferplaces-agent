@@ -42,7 +42,7 @@ tools_map[N.DIGITAL_TWIN_TOOL] = DigitalTwinTool()
 tools_map[N.SAFER_RAIN_TOOL] = SaferRainTool()
 tools_map[N.SAFERBUILDINGS_TOOL] = SaferBuildingsTool()
 
-tools_map[N.ICON2I_INGESTOR_TOOL] = ICON2IIngestorTool()
+# tools_map[N.ICON2I_INGESTOR_TOOL] = ICON2IIngestorTool() # ???: It is not needed in the agent (?)
 tools_map[N.ICON2I_RETRIEVER_TOOL] = ICON2IRetrieverTool()
 tools_map[N.DPC_RETRIEVER_TOOL] = DPCRetrieverTool()
 
