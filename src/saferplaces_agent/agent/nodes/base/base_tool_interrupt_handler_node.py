@@ -312,14 +312,26 @@ class BaseToolInterruptOutputConfirmationHandler(BaseToolInterruptHandler):
             }
         
         elif provided_output is False:
-            update_inputs = self._generate_provided_output(response)
-            self.tool_message.tool_calls[-1]["args"].update(update_inputs)
-            self.tool.output_confirmed = False
+            # DOC: ↓↓↓ OLD WAY: but maybe we need to get back to chatbot with the original request + updates (see [NEW WAY] below)
+            # update_inputs = self._generate_provided_output(response)
+            # self.tool_message.tool_calls[-1]["args"].update(update_inputs)
+            # self.tool.output_confirmed = False
+            # return {
+            #     'goto': self.tool_handler_node,
+            #     'update': { "messages": [self.tool_message] } 
+            # }
+            # DOC: [NEW WAY] — we need to return to the chatbot with the original request + updates
+            update_inputs = self._generate_provided_output(response) # ???: maybe non serve nemmeno
+            remove_tool_message = RemoveMessage(self.tool_message.id)
+            system_message = SystemMessage(content=f"User choose to update it's original request with this additional informations: {response}")
             return {
-                'goto': self.tool_handler_node,
-                'update': { "messages": [self.tool_message] } 
+                'goto': END,
+                'update': { 
+                    # "messages": [remove_tool_message, system_message],
+                    "node_params": { N.CHATBOT_UPDATE_MESSAGES: { "update_messages": [remove_tool_message, system_message] } },
+                }
             }
-    
+
         else:
             remove_tool_message = RemoveMessage(self.tool_message.id)
             system_message = SystemMessage(content=f"User choose to exit the tool process with this response: {response}")            

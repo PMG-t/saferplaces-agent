@@ -150,22 +150,22 @@ class GraphInterface:
             stream_mode = 'updates'
         ):
             for value in event.values():
-                
-                if self._event_value_is_interrupt(value):
-                    self.interrupted = True
-                    agent_messages.append(self._interrupt2dict(value))
-                
-                else:
-                    if 'messages' in value:
-                        value['message'] = value['messages'][-1].to_json()
-                        del value['messages']
+                if value is not None:
+                    if self._event_value_is_interrupt(value):
+                        self.interrupted = True
+                        agent_messages.append(self._interrupt2dict(value))
+                    
+                    else:
+                        if 'messages' in value:
+                            value['message'] = value['messages'][-1].to_json()
+                            del value['messages']
 
-                    if 'node_params' in value:
-                        for node, params in value['node_params'].items():
-                                if 'tool_message' in params:
-                                    value['node_params'][node]['tool_message'] = params['tool_message'].to_json()
+                        if 'node_params' in value:
+                            for node, params in value['node_params'].items():
+                                    if 'tool_message' in params:
+                                        value['node_params'][node]['tool_message'] = params['tool_message'].to_json()
 
-                    agent_messages.append(value)
+                        agent_messages.append(value)
             
         return agent_messages
     

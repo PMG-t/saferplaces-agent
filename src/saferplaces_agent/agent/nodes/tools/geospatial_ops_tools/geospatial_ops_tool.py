@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import uuid
 import base64
 import datetime
@@ -8,8 +9,8 @@ from enum import Enum
 import requests
 import contextlib
 
-from typing import Optional, Union, List, Dict, Any
-from pydantic import BaseModel, Field, AliasChoices, field_validator, model_validator
+from typing import Optional, Union, List, Dict, Any, Literal
+from pydantic import BaseModel, Field, AliasChoices, field_validator, model_validator, validator
 
 from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
@@ -17,60 +18,73 @@ from langchain_core.callbacks import (
 )
 
 from agent import utils
+from agent import states as GraphStates
 from agent import names as N
 from agent.nodes.base import BaseAgentTool
 
 
+
+_FILENAME_RE = re.compile(r"^[a-z0-9_-]+\.(geojson|gpkg|shp|tif|tiff)$")
+
 class GeospatialOpsInputSchema(BaseModel):
     """
-    Inputs for the Geospatial Operation Tool.
-
-    This tool interprets a user prompt that requests geospatial operations on layers.
-
-    Capabilities include:
-    - Responding with geographic knowledge or descriptive/statistical outputs 
-      (e.g., bounding box of a city, centroid of a polygon, maximum value of a raster).
-      These results usually do not require creating a new layer, unless the user explicitly requests it.
-    - Performing spatial operations that generate new geospatial datasets 
-      (e.g., intersections, unions, clipping, dissolve, difference).
-      These operations typically produce a new output layer that can be added to the map.
-    - If it is unclear whether a new layer should be produced, the tool may ask the user 
-      for confirmation before proceeding.
+    Arguments for generating ready-to-run Python code that fulfills a geospatial request.
+    If `output_file` is provided, a new dataset MUST be produced and saved to the
+    preconfigured S3 prefix combined with this filename.
     """
 
     prompt: str = Field(
+        ...,
         title="User Prompt",
         description=(
-            "The user request describing the geospatial operation to perform. "
-            "This can include descriptive/statistical queries (e.g., bounding box of a city, "
-            "maximum raster value) or operations that generate new datasets "
-            "(e.g., intersection, union, clip, dissolve). "
-            "The tool will decide whether the request should return a direct value/geometry "
-            "or produce a new output layer."
+            "Natural-language request for a geospatial operation. Be explicit about "
+            "layer names, filters/expressions, thresholds, and expected outputs when relevant."
         ),
+        min_length=3,
         examples=[
             "Give me the bounding box of Rome",
-            "Find all buildings within the bounding box of Rome",
-            "What is the maximum elevation value in this raster?",
+            "Count features where property1 > 10 in buildings.geojson",
+            "Clip buildings.geojson by flood_zone.geojson",
+            "Intersect landuse.gpkg with protected_areas.gpkg",
         ],
     )
 
-    output_layer: str | None = Field(
-        title="Output Layer Name",
-        description=(
-            "Optional. The name of the new layer to be created with the results of the operation. "
-            "This should only be provided if the operation generates new geospatial data suitable "
-            "for visualization (e.g., intersection, clip, union). "
-            "For descriptive/statistical operations (e.g., bounding box, centroid, raster statistics), "
-            "this should normally be None unless the user explicitly requests a layer."
-            "The name should follow these rules: no spaces, lowercase, ends with .geojson or .tif based on the requested output data type."
-        ),
-        examples=[
-            "intersected_buildings.geojson",
-            "clipped_area.tif",
-        ],
+    output_file: Optional[str] = Field(
         default=None,
+        title="Output filename (no path)",
+        description=(
+            "Filename ONLY (no folders/URIs). Lowercase, [a-z0-9_-], ending with one of: "
+            ".geojson, .gpkg, .shp, .tif, .tiff. If provided, the code MUST create a dataset "
+            "and save it to the preconfigured S3 prefix joined with this filename."
+        ),
+        examples=["result.geojson", "bbox_rome.geojson", "ndvi_clip.tif"],
     )
+
+    return_kind: Literal["auto", "value", "geometry", "layer"] = Field(
+        default="auto",
+        title="Preferred result shape",
+        description=(
+            "Hint for the code about the expected result form: 'value' (numbers/stats), "
+            "'geometry' (single geometry / GeoJSON-like), 'layer' (dataset), or 'auto'."
+        ),
+    )
+
+    target_crs: Optional[str] = Field(
+        default=None,
+        title="Target CRS",
+        description="Optional CRS to enforce on outputs (e.g., 'EPSG:4326').",
+    )
+
+    @validator("output_file")
+    def _validate_filename(cls, v):
+        if v is None:
+            return v
+        if not _FILENAME_RE.fullmatch(v):
+            raise ValueError(
+                "output_file must be filename only, lowercase, [a-z0-9_-], "
+                "with extension .geojson|.gpkg|.shp|.tif|.tiff"
+            )
+        return v
 
     # class Config:
     #     # Impedisci campi sconosciuti; abilita uso dei nomi/alias indifferentemente
@@ -85,19 +99,20 @@ class GeospatialOpsTool(BaseAgentTool):
     def __init__(self, **kwargs):
         super().__init__(
             name=N.GEOSPATIAL_OPS_TOOL,
-            description="""The Geospatial Operation Tool interprets natural language prompts requesting geospatial operations.
-            The tool can respond in two different ways:
-            1. For descriptive or statistical queries (e.g., bounding boxes, centroids, raster statistics), 
-            it returns direct values or simple geometries, without creating a new layer, 
-            unless the user explicitly requests one.
-            2. For productive or transformative operations (e.g., intersections, unions, clipping, differences, dissolves), 
-            it generates a new layer suitable for visualization and storage.
+            description = """
+            Generate ready-to-run Python code that executes a geospatial operation from a natural-language request.
 
-            If the intent is ambiguous, the tool may first ask the user to confirm whether a new layer should be created.
+            Inputs:
+            - `prompt` (required): The user's request (e.g., bbox/centroid/count/stats; clip/intersect/union/buffer/reproject; vector or raster).
+            - `output_file` (optional): Filename ONLY (no paths/URIs). Lowercase with [a-z0-9_-], ending in .geojson/.gpkg/.shp/.tif/.tiff.
+            - `return_kind` (optional): Hint for the expected result form ('value' | 'geometry' | 'layer' | 'auto').
+            - `target_crs` (optional): CRS to enforce on outputs (e.g., 'EPSG:4326').
 
-            Possible outputs:
-            - Direct values or simple geometries (numbers, text, GeoJSON snippets).
-            - Renderable layers (GeoJSON, raster) when appropriate.
+            Behavior:
+            - If `output_file` is provided, the operation MUST produce a new dataset and save it to the preconfigured S3 prefix combined with that filename. The code must not alter the filename or prepend any local path.
+            - If `output_file` is not provided, return an in-memory result or print a concise summary (e.g., bbox coordinates, counts, stats).
+            - Layers referenced in the prompt correspond to entries in the layer registry (provided in a separate system message). Load them by their URIs and types from that registry.
+            - The generated code must be complete (no placeholders), use only approved libraries, and end by printing a short one-line summary of the operation and outputs.
             """,
             args_schema=GeospatialOpsInputSchema,
             **kwargs
@@ -158,7 +173,7 @@ class GeospatialOpsTool(BaseAgentTool):
             return output_layer
 
         infer_rules = {
-            'output_layer': infer_output_layer,
+            'output_file': lambda **kwargs: f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/{kwargs['output_file']}" if kwargs.get('output_file', None) is not None else None,
         }
         return infer_rules
 
@@ -171,68 +186,83 @@ class GeospatialOpsTool(BaseAgentTool):
     ):
 
         if not self.output_confirmed:
-            def describe_layer_registry():
-                """Describe the layers available in the registry."""
-                layers = self.graph_state.get('layer_registry', [])
-                if not layers:
-                    return "No layers available."
-                layer_descriptions = []
-                for layer in layers:
-                    layer_description = []
-                    layer_description.extend([
-                        f"Layer: {layer['name']}",
-                        f"- type: {layer['type']}",
-                        f"- src: {layer['src']}"
-                    ])
-                    layer_descriptions.append('\n'.join(layer_description))
-                return '\n\n'.join(layer_descriptions)
-
-            additional_info = '\n'.join(
-                [f'- {key}: {value}' for key, value in kwargs.items() if key not in ['prompt', 'output_layer']])
-            additional_info = f"Additional and useful informations:\n{additional_info}" if additional_info else ""
+            # def describe_layer_registry():
+            #     """Describe the layers available in the registry."""
+            #     layers = self.graph_state.get('layer_registry', [])
+            #     if not layers:
+            #         return "No layers available."
+            #     layer_descriptions = []
+            #     for layer in layers:
+            #         layer_description = []
+            #         layer_description.extend([
+            #             f"Layer: {layer['name']}",
+            #             f"- type: {layer['type']}",
+            #             f"- src: {layer['src']}"
+            #         ])
+            #         layer_descriptions.append('\n'.join(layer_description))
+            #     return '\n\n'.join(layer_descriptions)
 
             print('\n\n' + '-'*80 + '\n')
             print(f'layers: {self.graph_state.get("layer_registry", [])}')
+
+            # if 'output_file' in kwargs and kwargs['output_file'] is not None:
+            #     kwargs['output_file'] = f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/{kwargs['output_file']}"
+
             print(f'kwargs: {kwargs}')
-            print(f'additional_info: {additional_info}\n')
             print('\n' + '-'*80 + '\n')
 
             output = utils.ask_llm(
                 role='system',
-                message=f"""You are a Python code generator specialized in geospatial operations. 
+                message=f"""
+You are a Python code generator specialized in geospatial operations.
 
-                Your task: Given a user request describing a geospatial data operation, output only valid Python code that produces the requested data. 
+OUTPUT REQUIREMENT:
+- Return ONLY valid, executable Python code. No comments, no markdown, no explanations.
+- Use ONLY these libraries: geopandas, shapely, pandas, fiona, rasterio, numpy, pyproj.
+- Forbid any other imports (no os, sys, subprocess, shutil, requests, pathlib, etc.).
+- No shell or network calls, except reading the URIs provided by the layer registry system message.
 
-                Constraints:
+LAYER REGISTRY:
+- A separate system message lists available layers with their names, types (vector/raster), and URIs.
+- When the user references a layer by name, load it from that registry.
 
-                1. Always respond with Python code only. Do NOT include explanations, text, or commentary.  
-                2. You may use only the following libraries: geopandas, shapely, pandas, fiona, rasterio, pyproj, numpy. No other libraries.  
-                3. You can produce results based on:  
-                a) Your internal geographic knowledge (e.g., bounding boxes of known cities, coordinates of countries).  
-                b) Provided layers, given usually as S3 URL.
-                4. If the user requires to produce a new layer, ensure the code stores the results in the layer provided in the `output_layer` argument.
+PERSISTENCE RULE (NO AMBIGUITY):
+- If `output_file` is provided, YOU MUST create a dataset and save it to:
+  DEST_URI = "{kwargs.get('output_file')}".
+- Do NOT modify the filename. Do NOT prepend local paths. Always save exactly to DEST_URI.
+- Choose the save method by file extension:
+  - Vector: .geojson/.gpkg/.shp via GeoPandas .to_file (driver GeoJSON/GPKG/ESRI Shapefile).
+  - Raster: .tif/.tiff via rasterio (use appropriate profile/dtype).
 
-                Instructions:
+DESCRIPTIVE REQUESTS:
+- If the request is descriptive (e.g., "bbox of a city", counts, raster stats), compute the value.
+- If `output_file` is not provided: print the value and keep results in memory.
+- If `output_file` is provided and a dataset representation makes sense (e.g., bbox polygon as a GeoDataFrame, or a small raster mask), create it and save to DEST_URI.
 
-                - At the end of the code produce print statement tha show some information about the operation performed and its output.
-                - The code should be self-contained and executable, assuming the required libraries are imported and any input layers are accessible.  
-                - If the user request requires working with a layer, assume it is provided as a variable `layer` (loaded with geopandas.read_file or similar) or as a file path / S3 URL string.  
-                - Use proper geospatial operations: intersections, within, filtering by bbox, or attribute-based selections.  
-                - Produce only data, e.g., a Raster or Vector layer, a Pandas DataFrame, a GeoPandas GeoDataFrame, a shapely geometry, or a dictionary summarizing geometry stats.  
-                - Do NOT print, log, or output anything else.  
-                - Do not perform file system operations outside of reading allowed layers.  
-                - Do not import os, sys, subprocess, or any unsafe modules.  
+CITY BBOX FALLBACK:
+- If the request asks for the bbox of a well-known city and no suitable registry layer is used, provide a minimal internal gazetteer for a few major cities (approximate EPSG:4326 bounds) such as Rome, Paris, London, New York to compute the bbox.
 
-                User request:
-                "{kwargs['prompt']}"
-                Output layer:
-                "{kwargs.get('output_layer', 'None')}"
-                
-                You have access to the following layers:
-                {describe_layer_registry()}
-                
-                {additional_info}
-                """,
+TRANSFORMATIVE REQUESTS:
+- For clip/intersect/union/dissolve/buffer/difference/reproject or raster crop/mask/reproject/statistics:
+  - Load inputs from the registry (vector or raster).
+  - Handle CRS carefully (GeoDataFrame.to_crs / rasterio reproject). If `target_crs` is provided, enforce it on outputs.
+  - When `output_file` is provided, save the resulting dataset to DEST_URI as specified above.
+
+FINAL PRINT (MANDATORY, LAST LINES ONLY):
+- Print one single-line summary including:
+  - the operation performed,
+  - key result info (e.g., count, bbox coordinates, or raster stats),
+  - and if saved, the exact DEST_URI.
+
+INPUTS:
+- User request (prompt): {kwargs['prompt']!r}
+- output_file (filename-only or None): {kwargs.get('output_file')}
+- return_kind: {kwargs.get('return_kind', 'auto')}
+- target_crs (or None): {kwargs.get('target_crs')}
+- persist_prefix (S3 prefix, preconfigured): {repr('{persist_prefix}')}
+
+Generate the code now. Only code. No comments.
+""",
                 eval_output=False
             )
             

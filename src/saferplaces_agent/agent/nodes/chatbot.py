@@ -68,8 +68,10 @@ def set_tool_choice(tool_choice: list[str] | None = None) -> Runnable[LanguageMo
 
 def chatbot_update_messages(state: BaseGraphState):
     """Update the messages in the state with the new messages."""
+    print('---call chatbot_update_messages---')
+    print(state.get("node_params", dict()).get(N.CHATBOT_UPDATE_MESSAGES, dict()))
     messages = state.get("node_params", dict()).get(N.CHATBOT_UPDATE_MESSAGES, dict()).get("update_messages", [])
-    return {'messages': messages, 'node_params': dict()}
+    return {'messages': messages, 'node_params': {N.CHATBOT_UPDATE_MESSAGES: { 'update_messages': None }}}
 
 
 def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESSAGES, N.DEMO_SUBGRAPH, N.CREATE_PROJECT_SUBGRAPH, N.FLOODING_RAINFALL_SUBGRAPH, N.SAFERPLACES_API_SUBGRAPH, N.SAFERCAST_API_SUBGRAPH]]:     # type: ignore
@@ -79,7 +81,7 @@ def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESS
     
     if len(state["messages"]) > 0:
         
-        if state.get("node_params", dict()).get(N.CHATBOT_UPDATE_MESSAGES, None) is not None:
+        if state.get("node_params", dict()).get(N.CHATBOT_UPDATE_MESSAGES, dict()).get("update_messages", None) is not None:
             return Command(goto=N.CHATBOT_UPDATE_MESSAGES)
         
         llm_with_tools = set_tool_choice(tool_choice = state.get("avaliable_tools", list()))
