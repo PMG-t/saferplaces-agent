@@ -104,9 +104,12 @@ class BaseToolHandlerNode:
                 "tool_call_id": tool_call['id'],
             }
             
+            tool_result_updates = result.get('updates', dict()) if isinstance(result, dict) else dict()
+            
             callback_result = self.on_handle_end_callback(**{'tool_output': result})  # DOC: Call the on_handle_end function if provided
             
-            additional_updates = self.additional_ouput_state | callback_result.get('update', dict())
+            additional_updates = self.additional_ouput_state | tool_result_updates | callback_result.get('update', dict())   # TODO: correct with 'updates'
+
             next_node = callback_result.get('next_node', None)
             
             if next_node is not None:

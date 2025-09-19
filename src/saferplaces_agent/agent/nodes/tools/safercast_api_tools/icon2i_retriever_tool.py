@@ -14,7 +14,7 @@ from langchain_core.callbacks import (
 
 from agent import utils
 from agent import names as N
-from agent.nodes.base import BaseAgentTool
+from agent.nodes.base import base_models, BaseAgentTool
 
 
 
@@ -30,19 +30,6 @@ Variable = Literal[
     'pressure_reduced_to_msl',
     'total_precipitation'
 ]
-
-class BBox(BaseModel):
-    """
-    Bounding box in EPSG:4326 (WGS84).
-    - `west` = min longitude
-    - `south` = min latitude
-    - `east` = max longitude
-    - `north` = max latitude
-    """
-    west: float = Field(..., description="Minimum longitude (degrees), e.g., 10.0")
-    south: float = Field(..., description="Minimum latitude (degrees), e.g., 44.0")
-    east: float = Field(..., description="Maximum longitude (degrees), e.g., 12.0")
-    north: float = Field(..., description="Maximum latitude (degrees), e.g., 46.0")
 
 
 class ICON2IRetrieverSchema(BaseModel):
@@ -69,7 +56,7 @@ class ICON2IRetrieverSchema(BaseModel):
     )
 
     # ✅ Preferito: bbox nominato
-    bbox: Optional[BBox] = Field(
+    bbox: Optional[base_models.BBox] = Field(
         default=None,
         title="Bounding Box",
         description="Geographic extent in EPSG:4326 as named keys: west,south,east,north.",
@@ -143,7 +130,7 @@ class ICON2IRetrieverSchema(BaseModel):
             if len(self.lat_range) == 2 and len(self.long_range) == 2:
                 lat_min, lat_max = self.lat_range
                 lon_min, lon_max = self.long_range
-                self.bbox = BBox(west=lon_min, south=lat_min, east=lon_max, north=lat_max)
+                self.bbox = base_models.BBox(west=lon_min, south=lat_min, east=lon_max, north=lat_max)
 
         # require at least some spatial constraint (optional: puoi renderlo obbligatorio)
         if self.bbox is None:
@@ -238,7 +225,58 @@ class ICON2IRetrieverTool(BaseAgentTool):
 
     # DOC: Inference rules ( i.e.: from location name to bbox ... )
     def _set_args_inference_rules(self) -> dict:                  
-        infer_rules = dict()
+        def infer_time_range(**kwargs):
+            if kwargs.get('time_start', None) is not None and kwargs.get('time_end', None) is not None:
+                # DOC: both time_start and time_end are provided, no inference needed
+                return None
+            time_range = kwargs.get('time_range', None)
+            now = datetime.datetime.now(tz=datetime.timezone.utc).replace(tzinfo=None)
+            if time_range is None:
+                # DOC: default next hour range
+                now = datetime.datetime.now(tz=datetime.timezone.utc).replace(minute=0, second=0, microsecond=0, tzinfo=None)
+                time_range = [
+                    now.replace(minute=0, second=0),
+                    now.replace(minute=0, second=0) + relativedelta.relativedelta(hours=1)
+                ]
+            else:
+                time_range = [datetime.datetime.fromisoformat(t).replace(tzinfo=None) for t in time_range]
+            return [ time_range[0].replace(tzinfo=None).isoformat(), time_range[1].replace(tzinfo=None).isoformat() ]
+        
+        def infer_time_start(**kwargs):
+            time_start = kwargs.get('time_start', None)
+            now = datetime.datetime.now(tz=datetime .timezone.utc).replace(tzinfo=None)
+            if time_start is None:
+                # DOC: infer from time_range or default to current hour
+                time_start = kwargs.get('time_range', [None,None])[0] or now.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+            else:
+                time_start = datetime.datetime.fromisoformat(time_start).replace(tzinfo=None)
+            return time_start.isoformat()
+        
+        def infer_time_end(**kwargs):
+            time_end = kwargs.get('time_end', None)
+            now = datetime.datetime.now(tz=datetime.timezone.utc).replace(tzinfo=None)
+            if time_end is None:
+                # DOC: infer from time_range or next hour
+                time_end = kwargs.get('time_range', [None,None])[1] or now.replace(hour=now.hour+1, minute=0, second=0, microsecond=0, tzinfo=None)
+            else:
+                time_end = datetime.datetime.fromisoformat(time_end).replace(tzinfo=None)
+            return time_end.isoformat()
+
+        def infer_bucket_destination(**kwargs):
+            """
+            Infer the S3 bucket destination based on user ID and project ID.
+            """
+            user_id = kwargs.get('user_id', 'test')
+            project_id = kwargs.get('project_id', 'dev')
+            bucket_name = os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')
+            return f"{bucket_name}/user=={user_id}/project=={project_id}/icon2i-out"
+                  
+        infer_rules = {
+            'time_range': infer_time_range,
+            'time_start': infer_time_start,
+            'time_end': infer_time_end,
+            'bucket_destination': infer_bucket_destination,
+        }
         return infer_rules
     
 
@@ -250,14 +288,28 @@ class ICON2IRetrieverTool(BaseAgentTool):
     ): 
         # DOC: Call the SaferBuildings API ...
         api_url = f"{os.getenv('SAFERCAST_API_ROOT', 'http://localhost:5002')}/processes/icon2i-retriever-process/execution"
-        payload = { 
-            "inputs": kwargs | {
+        
+        def build_input_payload():
+            inputs = {
                 "token": os.getenv("SAFERCAST_API_TOKEN"),
-                "user": os.getenv("SAFERCAST_API_USER"),
-            } | {
-                "debug": True,  # TEST: enable debug mode
+
+                'lat_range': kwargs['bbox'].lat_range(),
+                'long_range': kwargs['bbox'].long_range(),
+                'time_range': [
+                    datetime.datetime.fromisoformat(kwargs['time_start']).replace(tzinfo=None).isoformat(),
+                    datetime.datetime.fromisoformat(kwargs['time_end']).replace(tzinfo=None).isoformat(),
+                ],
+
+                'variable': kwargs['variable'],
+
+                'bucket_destination': kwargs['bucket_destination'],
+                
+                'debug': kwargs.get('debug', True),
             }
-        }
+            return inputs
+        
+        payload = { 'inputs': build_input_payload() }
+
         print(f"Executing {self.name} with args: {payload}")
         response = requests.post(api_url, json=payload)
         print(f"Response status code: {response.status_code} - {response.content}")

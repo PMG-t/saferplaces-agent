@@ -9,7 +9,7 @@ from agent.nodes.tools import (
     ICON2IRetrieverTool,
     DPCRetrieverTool
 )
-from agent.nodes.base import BaseToolHandlerNode, BaseToolInterruptNode
+from agent.nodes.base import BaseToolHandlerNode, BaseToolInterruptNode, BaseToolHandlerNodeCallback
 
 
 
@@ -35,7 +35,7 @@ safercast_api_tool_handler = BaseToolHandlerNode(
     tool_handler_node_name = N.SAFERCAST_API_TOOL_HANDLER,
     tool_interrupt_node_name = N.SAFERCAST_API_TOOL_INTERRUPT,
     tools = safercast_api_tools_dict,
-    additional_ouput_state = { 'requested_agent': None, 'node_params': dict() }
+    additional_ouput_state = { 'requested_agent': None, 'node_params': dict() },
 )
 
 

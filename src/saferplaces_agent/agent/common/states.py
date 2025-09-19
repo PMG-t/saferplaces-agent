@@ -25,3 +25,8 @@ class BaseGraphState(MessagesState):
     
     user_id: str = None
     project_id: str = None
+
+
+def src_layer_exists(graph_state: BaseGraphState, layer_src: str) -> bool:
+    """Check if the layer exists in the graph state."""
+    return any(layer.get('src') == layer_src for layer in graph_state.get('layer_registry', []))

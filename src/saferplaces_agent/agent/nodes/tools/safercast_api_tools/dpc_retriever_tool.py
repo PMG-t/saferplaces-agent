@@ -4,7 +4,7 @@ from dateutil import relativedelta
 from enum import Enum
 import requests
 
-from typing import Optional, Union, List, Dict, Any
+from typing import Optional, Union, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, AliasChoices, field_validator, model_validator
 
 from langchain_core.callbacks import (
@@ -13,8 +13,9 @@ from langchain_core.callbacks import (
 )
 
 from agent import utils
+from agent.common import states as GraphStates
 from agent import names as N
-from agent.nodes.base import BaseAgentTool
+from agent.nodes.base import base_models, BaseAgentTool
 
 
 from typing import Optional, List, Literal
@@ -42,39 +43,39 @@ DPCProductCode = Literal[
 
 
 # ---- Bounding Box class ----
-class BBox(BaseModel):
-    """
-    Bounding box in EPSG:4326 (WGS84).
-    - `west` = min longitude
-    - `south` = min latitude
-    - `east` = max longitude
-    - `north` = max latitude
-    """
-    west: float = Field(..., description="Minimum longitude (degrees), e.g., 10.0")
-    south: float = Field(..., description="Minimum latitude (degrees), e.g., 44.0")
-    east: float = Field(..., description="Maximum longitude (degrees), e.g., 12.0")
-    north: float = Field(..., description="Maximum latitude (degrees), e.g., 46.0")
+# class BBox(BaseModel):
+#     """
+#     Bounding box in EPSG:4326 (WGS84).
+#     - `west` = min longitude
+#     - `south` = min latitude
+#     - `east` = max longitude
+#     - `north` = max latitude
+#     """
+#     west: float = Field(..., description="Minimum longitude (degrees), e.g., 10.0")
+#     south: float = Field(..., description="Minimum latitude (degrees), e.g., 44.0")
+#     east: float = Field(..., description="Maximum longitude (degrees), e.g., 12.0")
+#     north: float = Field(..., description="Maximum latitude (degrees), e.g., 46.0")
 
-    def __str__(self):
-        return f"{{\"west\": {self.west}, \"south\": {self.south}, \"east\": {self.east}, \"north\": {self.north}}}"
+#     def __str__(self):
+#         return f"{{\"west\": {self.west}, \"south\": {self.south}, \"east\": {self.east}, \"north\": {self.north}}}"
     
-    def to_list(self) -> List[float]:
-        """
-        Convert the bounding box to a list [west, south, east, north].
-        """
-        return [self.west, self.south, self.east, self.north]
+#     def to_list(self) -> List[float]:
+#         """
+#         Convert the bounding box to a list [west, south, east, north].
+#         """
+#         return [self.west, self.south, self.east, self.north]
     
-    def lat_range(self) -> List[float]:
-        """
-        Get the latitude range as [south, north].
-        """
-        return [self.south, self.north]
+#     def lat_range(self) -> List[float]:
+#         """
+#         Get the latitude range as [south, north].
+#         """
+#         return [self.south, self.north]
     
-    def long_range(self) -> List[float]:
-        """
-        Get the longitude range as [west, east].
-        """
-        return [self.west, self.east]
+#     def long_range(self) -> List[float]:
+#         """
+#         Get the longitude range as [west, east].
+#         """
+#         return [self.west, self.east]
 
 
 # ---- Main schema ----
@@ -118,7 +119,7 @@ class DPCRetrieverSchema(BaseModel):
     )
 
     # ---- WHERE (preferred) ----
-    bbox: Optional[BBox] = Field(
+    bbox: Optional[base_models.BBox] = Field(
         default=None,
         title="Bounding Box",
         description="Geographic extent in EPSG:4326 with named keys: west, south, east, north.",
@@ -206,7 +207,7 @@ class DPCRetrieverSchema(BaseModel):
             if len(self.lat_range) == 2 and len(self.long_range) == 2:
                 lat_min, lat_max = self.lat_range
                 lon_min, lon_max = self.long_range
-                self.bbox = BBox(west=lon_min, south=lat_min, east=lon_max, north=lat_max)
+                self.bbox = base_models.BBox(west=lon_min, south=lat_min, east=lon_max, north=lat_max)
 
         if self.bbox is None:
             raise ValueError("You must provide either `bbox` or both `lat_range` and `long_range`.")
@@ -401,8 +402,22 @@ class DPCRetrieverTool(BaseAgentTool):
 
         # TODO: Check if the response is valid
         
+        
         tool_response = {
             'dpc_retriever_response': api_response,
+            'updates': {
+                'layer_registry': self.graph_state.get('layer_registry', []) + [
+                    {
+                        'title': f"DPC_{payload['inputs']['product']}",
+                        'description': f"DPC {payload['inputs']['product']} data for bbox {kwargs['bbox']} from {payload['inputs']['time_range'][0]} to {payload['inputs']['time_range'][1]}",
+                        'src': api_response['uri'],
+                        'type': 'raster',
+                        'metadata': dict()  # TODO: To be well defined (maybe class)
+                    }
+                ]
+                if not GraphStates.src_layer_exists(self.graph_state, api_response['uri'])
+                else []
+            }
         }
         
         print('\n', '-'*80, '\n')
