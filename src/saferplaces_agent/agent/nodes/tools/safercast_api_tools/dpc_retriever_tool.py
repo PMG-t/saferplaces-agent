@@ -19,7 +19,7 @@ from agent.nodes.base import BaseAgentTool
 
 from typing import Optional, List, Literal
 from pydantic import BaseModel, Field, model_validator
-from datetime import datetime, timezone
+from datetime import timezone
 
 
 # ---- Product enum (allowed values) ----
@@ -90,7 +90,7 @@ class DPCRetrieverSchema(BaseModel):
             "- `LTG`: Lightning strike frequency map\n"
             "- `AMV`: Upper-level wind vectors (Atmospheric Motion Vectors)\n"
             "- `HRD`: Heavy Rain Detection (multi-sensor severe rainfall index)\n"
-            "- `RADAR_STATUS`: Status of radar network sites (ON/OFF)\n"
+            "- `RADAR_STATUS`: Status of radar network sites\n"
             "- `CAPPI1..8`: Reflectivity at fixed altitudes from 1 to 8 km"
         ),
         examples=["SRI"],
@@ -200,8 +200,8 @@ class DPCRetrieverSchema(BaseModel):
             try:
                 ts = self.time_start.replace("Z", "+00:00")
                 te = self.time_end.replace("Z", "+00:00")
-                dt_start = datetime.fromisoformat(ts)
-                dt_end = datetime.fromisoformat(te)
+                dt_start = datetime.datetime.fromisoformat(ts)
+                dt_end = datetime.datetime.fromisoformat(te)
             except Exception as e:
                 raise ValueError(f"Invalid ISO8601 timestamp in time_start/time_end: {e}")
 
