@@ -182,7 +182,8 @@ class BaseToolInterruptArgsConfirmationHandler(BaseToolInterruptHandler):
         return interrupt_message
     
     def _generate_provided_args(self, response):
-        args_value = '\n'.join([ f'- {arg}: {val}' for arg,val in self.tool_interrupt["data"]["args"].items() ])
+        # args_value = '\n'.join([ f'- {arg}: {val}' for arg,val in self.tool_interrupt["data"]["args"].items() ])  # DOC: OLD manner, but args are the one in function call, not all the tool args_schema
+        args_value = f"{self.tool_message.tool_calls[-1]['args']}"
         provided_args = utils.ask_llm(
             role = 'system',
             message = f"""The tool execution could not be completed for this reason:

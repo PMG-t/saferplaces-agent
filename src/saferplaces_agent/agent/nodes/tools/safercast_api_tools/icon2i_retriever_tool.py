@@ -34,15 +34,15 @@ Variable = Literal[
 class BBox(BaseModel):
     """
     Bounding box in EPSG:4326 (WGS84).
-    west  = min longitude
-    south = min latitude
-    east  = max longitude
-    north = max latitude
+    - `west` = min longitude
+    - `south` = min latitude
+    - `east` = max longitude
+    - `north` = max latitude
     """
-    west: float = Field(..., description="Minimum longitude (°), e.g., 10.0")
-    south: float = Field(..., description="Minimum latitude (°), e.g., 44.0")
-    east: float = Field(..., description="Maximum longitude (°), e.g., 12.0")
-    north: float = Field(..., description="Maximum latitude (°), e.g., 46.0")
+    west: float = Field(..., description="Minimum longitude (degrees), e.g., 10.0")
+    south: float = Field(..., description="Minimum latitude (degrees), e.g., 44.0")
+    east: float = Field(..., description="Maximum longitude (degrees), e.g., 12.0")
+    north: float = Field(..., description="Maximum latitude (degrees), e.g., 46.0")
 
 
 class ICON2IRetrieverSchema(BaseModel):
@@ -168,7 +168,7 @@ class ICON2IRetrieverSchema(BaseModel):
             if dt_end <= dt_start:
                 raise ValueError("`time_end` must be greater than `time_start`.")
 
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
             max_end = now.replace(microsecond=0)  # normalize
             # consentiamo end nel futuro ma ≤ 72h
             horizon = (dt_end - now).total_seconds() / 3600.0

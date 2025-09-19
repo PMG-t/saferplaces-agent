@@ -103,7 +103,10 @@ class BaseAgentTool(BaseTool):
         args_inference_rules = self._set_args_inference_rules()
         for arg in self.args_schema.model_fields.keys():
             if arg in args_inference_rules and args_inference_rules[arg] is not None:
-                tool_args[arg] = args_inference_rules[arg](**tool_args)
+                infer_arg = args_inference_rules[arg](**tool_args)
+                if infer_arg is not None:
+                    tool_args[arg] = infer_arg
+                    
     
     
     # DOC: Confirm args if needed 

@@ -55,6 +55,27 @@ class BBox(BaseModel):
     east: float = Field(..., description="Maximum longitude (degrees), e.g., 12.0")
     north: float = Field(..., description="Maximum latitude (degrees), e.g., 46.0")
 
+    def __str__(self):
+        return f"{{\"west\": {self.west}, \"south\": {self.south}, \"east\": {self.east}, \"north\": {self.north}}}"
+    
+    def to_list(self) -> List[float]:
+        """
+        Convert the bounding box to a list [west, south, east, north].
+        """
+        return [self.west, self.south, self.east, self.north]
+    
+    def lat_range(self) -> List[float]:
+        """
+        Get the latitude range as [south, north].
+        """
+        return [self.south, self.north]
+    
+    def long_range(self) -> List[float]:
+        """
+        Get the longitude range as [west, east].
+        """
+        return [self.west, self.east]
+
 
 # ---- Main schema ----
 class DPCRetrieverSchema(BaseModel):
@@ -200,8 +221,8 @@ class DPCRetrieverSchema(BaseModel):
             try:
                 ts = self.time_start.replace("Z", "+00:00")
                 te = self.time_end.replace("Z", "+00:00")
-                dt_start = datetime.datetime.fromisoformat(ts)
-                dt_end = datetime.datetime.fromisoformat(te)
+                dt_start = datetime.datetime.fromisoformat(ts).replace(tzinfo=None)
+                dt_end = datetime.datetime.fromisoformat(te).replace(tzinfo=None)
             except Exception as e:
                 raise ValueError(f"Invalid ISO8601 timestamp in time_start/time_end: {e}")
 
@@ -276,18 +297,63 @@ class DPCRetrieverTool(BaseAgentTool):
     def _set_args_inference_rules(self) -> dict:
         
         def infer_time_range(**kwargs):
+            if kwargs.get('time_start', None) is not None and kwargs.get('time_end', None) is not None:
+                # DOC: both time_start and time_end are provided, no inference needed
+                return None
             time_range = kwargs.get('time_range', None)
+            now = datetime.datetime.now(tz=datetime.timezone.utc).replace(tzinfo=None)
             if time_range is None:
                 # DOC: default previous hour to now
                 now = datetime.datetime.now(tz=datetime.timezone.utc).replace(minute=0, second=0, microsecond=0, tzinfo=None)
                 time_range = [
-                    (now - relativedelta.relativedelta(hours=1)).isoformat(),
-                    now.isoformat(),
+                    now.replace(minute=0, second=0) - relativedelta.relativedelta(hours=1),
+                    now.replace(minute=0, second=0)
                 ]
-            return time_range
+            else:
+                time_range = [datetime.datetime.fromisoformat(t).replace(tzinfo=None) for t in time_range]
+            # DOC: consider DPC delay 10 min on time_end
+            if time_range[-1] > now - datetime.timedelta(minutes=10):
+                time_range[-1] = now - datetime.timedelta(minutes=10)
+            return [ time_range[0].replace(tzinfo=None).isoformat(), time_range[1].replace(tzinfo=None).isoformat() ]
+        
+        def infer_time_start(**kwargs):
+            time_start = kwargs.get('time_start', None)
+            now = datetime.datetime.now(tz=datetime .timezone.utc).replace(tzinfo=None)
+            if time_start is None:
+                # DOC: infer from time_range or default to 1 hour before now
+                time_start = kwargs.get('time_range', [None,None])[0] or now.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+            else:
+                time_start = datetime.datetime.fromisoformat(time_start).replace(tzinfo=None)
+            if time_start > now - datetime.timedelta(minutes=10):
+                time_start = now - datetime.timedelta(minutes=10)
+            return time_start.isoformat()
+        
+        def infer_time_end(**kwargs):
+            time_end = kwargs.get('time_end', None)
+            now = datetime.datetime.now(tz=datetime.timezone.utc).replace(tzinfo=None)
+            if time_end is None:
+                # DOC: infer from time_range or default to now
+                time_end = kwargs.get('time_range', [None,None])[1] or now.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+            else:
+                time_end = datetime.datetime.fromisoformat(time_end).replace(tzinfo=None)
+            if time_end > now - datetime.timedelta(minutes=10):
+                time_end = now - datetime.timedelta(minutes=10)
+            return time_end.isoformat()
+
+        def infer_bucket_destination(**kwargs):
+            """
+            Infer the S3 bucket destination based on user ID and project ID.
+            """
+            user_id = kwargs.get('user_id', 'test')
+            project_id = kwargs.get('project_id', 'dev')
+            bucket_name = os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')
+            return f"{bucket_name}/user=={user_id}/project=={project_id}/dpc-out"
                   
         infer_rules = {
             'time_range': infer_time_range,
+            'time_start': infer_time_start,
+            'time_end': infer_time_end,
+            'bucket_destination': infer_bucket_destination,
         }
         return infer_rules
     
@@ -300,19 +366,32 @@ class DPCRetrieverTool(BaseAgentTool):
     ): 
         # DOC: Call the SaferBuildings API ...
         api_url = f"{os.getenv('SAFERCAST_API_ROOT', 'http://localhost:5002')}/processes/dpc-retriever-process/execution"
-        payload = { 
-            "inputs": kwargs | {
+        
+        
+        def build_input_payload():
+            inputs = {
                 "token": os.getenv("SAFERCAST_API_TOKEN"),
-                "user": os.getenv("SAFERCAST_API_USER"),
-            } | {
-                "bucket_destination": f"{os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')}/user=={self.graph_state.get('user_id', 'test')}/dpc-out"
-            } | {
-                "debug": True,  # TEST: enable debug mode
+
+                'lat_range': kwargs['bbox'].lat_range(),
+                'long_range': kwargs['bbox'].long_range(),
+                'time_range': [
+                    datetime.datetime.fromisoformat(kwargs['time_start']).replace(tzinfo=None).isoformat(),
+                    datetime.datetime.fromisoformat(kwargs['time_end']).replace(tzinfo=None).isoformat(),
+                ],
+
+                'product': kwargs['product'],
+                'bucket_destination': kwargs['bucket_destination'],
+                
+                'debug': kwargs.get('debug', True),
             }
-        }
+            return inputs
+        
+        payload = { 'inputs': build_input_payload() }
+        
         print(f"Executing {self.name} with args: {payload}")
         response = requests.post(api_url, json=payload)
         print(f"Response status code: {response.status_code} - {response.content}")
+        
         response = response.json() 
         # TODO: Check output_code ...
 
