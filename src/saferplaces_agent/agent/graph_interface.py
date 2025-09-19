@@ -3,6 +3,8 @@ import json
 from textwrap import indent
 import datetime
 
+from typing import Any
+
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Interrupt
 
@@ -25,6 +27,16 @@ class GraphInterface:
         self.interrupted = False
 
         self.config = { "configurable": { "thread_id": self.thread_id } }
+        
+        
+    def get_state(self, key: str | list | None = None, fallback: Any = None) -> Any:
+        state = self.G.get_state(self.config).values
+        if key is None:
+            return state
+        if isinstance(key, str):
+            return state.get(key, fallback)
+        if isinstance(key, list):
+            return {k: state.get(k, fallback) for k in key}
 
 
     def _event_value_is_interrupt(self, event_value):

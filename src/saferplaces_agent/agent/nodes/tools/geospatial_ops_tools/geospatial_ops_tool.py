@@ -285,22 +285,43 @@ Generate the code now. Only code. No comments.
             # Recuperiamo l'output come stringa
             output = buffer.getvalue()
 
-            map_actions = {
-                'map_actions': [
+            # map_actions = {
+            #     'map_actions': [
+            #         {
+            #             'action': 'new_layer',
+            #             'layer_data': {
+            #                 'name': utils.juststem(kwargs['output_layer']),
+            #                 'type': 'vector' if kwargs['output_layer'].endswith('.geojson') else 'raster',
+            #                 'src': kwargs['output_layer']
+            #             }
+            #         }
+            #     ]
+            # } if kwargs.get('output_layer', None) else dict()
+            
+            
+            tool_output = {
+                'execution_output': output,
+                ** ({'output_file': kwargs['output_file']} if kwargs.get('output_file', None) else dict()),
+            }
+            
+            tool_updates = {
+                'layer_registry': self.graph_state.get('layer_registry', []) + [
                     {
-                        'action': 'new_layer',
-                        'layer_data': {
-                            'name': utils.juststem(kwargs['output_layer']),
-                            'type': 'vector' if kwargs['output_layer'].endswith('.geojson') else 'raster',
-                            'src': kwargs['output_layer']
-                        }
+                        'title': f"{kwargs['output_file']}",
+                        'description': f"Generated data from the request: \"{kwargs['prompt']}\"",
+                        'src': kwargs['output_file'],
+                        'type': 'raster' if kwargs['output_file'].endswith(('.tif', '.tiff')) else 'vector',
+                        'metadata': dict()  # TODO: To be well defined (maybe class)
                     }
                 ]
-            } if kwargs.get('output_layer', None) else dict()
+                if 'output_file' in kwargs and not GraphStates.src_layer_exists(self.graph_state, kwargs['output_file'])
+                else []
+            }
+            
 
             tool_response = {
-                'execution_output': output,
-                ** map_actions
+                'geospatial_ops_output': tool_output,
+                'updates': tool_updates,
             }
 
         print('\n', '-'*80, '\n')

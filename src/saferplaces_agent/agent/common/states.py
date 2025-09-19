@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 
-from typing import Sequence
+from typing import Sequence, Any
 
 import json
 from textwrap import indent
@@ -27,7 +27,7 @@ class BaseGraphState(MessagesState):
     avaliable_tools: list[str] = []
     
     user_id: str = None
-    project_id: str = None
+    project_id: str = None    
 
 
 def src_layer_exists(graph_state: BaseGraphState, layer_src: str) -> bool:
