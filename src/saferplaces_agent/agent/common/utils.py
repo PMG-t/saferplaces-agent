@@ -116,7 +116,10 @@ def dedent(s: str, add_tab: int = 0, tab_first: bool = True) -> str:
 _base_llm = ChatOpenAI(model="gpt-4o-mini")
 
 def ask_llm(role, message, llm=_base_llm, eval_output=False):
-    llm_out = llm.invoke([{"role": role, "content": message}])
+    if type(message) is str:
+        llm_out = llm.invoke([{"role": role, "content": message}])
+    elif type(message) is list:
+        llm_out = llm.invoke(message)
     if eval_output:
         try: 
             content = llm_out.content

@@ -3,7 +3,7 @@ import json
 from textwrap import indent
 import datetime
 
-from typing import Any
+from typing import Any, Literal
 
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Interrupt
@@ -68,6 +68,30 @@ class GraphInterface:
             return state.get(key, fallback)
         if isinstance(key, list):
             return {k: state.get(k, fallback) for k in key}
+        
+        
+    def register_layer(self, 
+        src: str,
+        title: str | None = None, 
+        description: str | None = None,
+        type: Literal['vector', 'raster'] = None,
+        metadata: dict | None = None,
+    ):
+        """Register a new layer in the Layer Registry."""
+        layer_dict = {
+            'title': title if title else utils.juststem(src),
+            ** ({ 'description': description } if description else dict()),
+            'src': src,
+            'type': type if type else 'vector' if utils.justext(src) in ['geojson', 'gpkg', 'shp'] else 'raster',
+            ** ({ 'metadata': metadata } if metadata else dict()),
+        }
+        event_value = { 'layer_registry': [layer_dict] }
+        
+        _ = list( self.G.stream(
+            input = event_value,
+            config = self.config, stream_mode = 'updates'
+        ) )
+        self.on_end_event(event_value)
 
 
     def _event_value_is_interrupt(self, event_value):
@@ -140,6 +164,19 @@ class GraphInterface:
         else:
             self.chat_events.append(new_events)
             self.chat_handler.add_events(new_events)
+            
+    def on_end_event(self, event_value):
+            
+            def update_layer_registry(event_value):
+                if type(event_value) is dict and event_value.get('layer_registry'):
+                    layer_registry = self.get_state('layer_registry')
+                    lr_uri = f's3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.user_id}/project=={self.project_id}/layer_registry.json'
+                    lr_fp = os.path.join(os.getcwd(), f'{self.user_id}__{self.project_id}__layer_registry.json')
+                    with open(lr_fp, 'w') as f:
+                        json.dump(layer_registry, f, indent=4)
+                    _ = s3_interface.s3_upload(filename=lr_fp, uri=lr_uri, remove_src= True )
+                    
+            update_layer_registry(event_value)
         
 
     def user_prompt(
@@ -209,21 +246,7 @@ class GraphInterface:
                 self.interrupt = self._event_value2interrupt(event_value)
                 self.update_events(self.interrupt)
                 
-            on_end_event(event_value)
-           
-           
-        def on_end_event(event_value):
-            
-            def update_layer_registry(event_value):
-                if type(event_value) is dict and event_value.get('layer_registry'):
-                    layer_registry = self.get_state('layer_registry')
-                    lr_uri = f's3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.user_id}/project=={self.project_id}/layer_registry.json'
-                    lr_fp = os.path.join(os.getcwd(), f'{self.user_id}__{self.project_id}__layer_registry.json')
-                    with open(lr_fp, 'w') as f:
-                        json.dump(layer_registry, f, indent=4)
-                    _ = s3_interface.s3_upload(filename=lr_fp, uri=lr_uri, remove_src= True )
-                    
-            update_layer_registry(event_value)
+            self.on_end_event(event_value)
             
                      
         stream_prompt = build_stream()
@@ -236,7 +259,7 @@ class GraphInterface:
                 if event_value is not None:
                     process_event_value(event_value)
                     
-        on_end_event(stream_prompt) # ???: non so se serve forse
+        self.on_end_event(stream_prompt) # ???: non so se serve forse
 
 class GraphRegistry:
 

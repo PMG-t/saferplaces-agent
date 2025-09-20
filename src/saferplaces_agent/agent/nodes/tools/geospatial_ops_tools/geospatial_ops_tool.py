@@ -12,6 +12,7 @@ import contextlib
 from typing import Optional, Union, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, AliasChoices, field_validator, model_validator, validator
 
+from langchain_core.messages import SystemMessage
 from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
     CallbackManagerForToolRun,
@@ -129,7 +130,7 @@ class GeospatialOpsTool(BaseAgentTool):
 
     def _set_args_inference_rules(self) -> dict:
         infer_rules = {
-            'output_file': lambda **kwargs: f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/project_id=={self.graph_state.get('project_id', 'test')}/{kwargs['output_file']}" if kwargs.get('output_file', None) is not None else None,
+            'output_file': lambda **kwargs: f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/project=={self.graph_state.get('project_id', 'test')}/{kwargs['output_file']}" if kwargs.get('output_file', None) is not None else None,
         }
         return infer_rules
 
@@ -169,7 +170,9 @@ class GeospatialOpsTool(BaseAgentTool):
 
             output = utils.ask_llm(
                 role='system',
-                message=f"""
+                message=[
+                    GraphStates.build_layer_registry_system_message(self.graph_state),
+                    SystemMessage(content=f"""
 You are a Python code generator specialized in geospatial operations.
 
 OUTPUT REQUIREMENT:
@@ -180,7 +183,7 @@ OUTPUT REQUIREMENT:
 
 LAYER REGISTRY:
 - A separate system message lists available layers with their names, types (vector/raster), and URIs.
-- When the user references a layer by name, load it from that registry.
+- When the user references a layer by name, use the corresponding source ('src' field) to load it in the code.
 
 PERSISTENCE RULE (NO AMBIGUITY):
 - If `output_file` is provided, YOU MUST create a dataset and save it to:
@@ -218,7 +221,7 @@ INPUTS:
 - persist_prefix (S3 prefix, preconfigured): {repr('{persist_prefix}')}
 
 Generate the code now. Only code. No comments.
-""",
+""")],
                 eval_output=False
             )
             

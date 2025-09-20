@@ -200,6 +200,32 @@ class BaseToolInterruptArgsConfirmationHandler(BaseToolInterruptHandler):
         )  
         return provided_args
     
+    def _classify_output_confirmation(self, response):
+        # args_value = '\n'.join([ f'- {arg}: {val}' for arg,val in self.tool_interrupt["data"]["args"].items() ])  # DOC: OLD manner, but args are the one in function call, not all the tool args_schema
+        args_value = f"{self.tool_message.tool_calls[-1]['args']}"
+        # output_description = '\n'.join([ f'- {out_name}: {out_value}' for out_name,out_value in self.tool_interrupt["data"]["output"].items() ])
+        provided_output = utils.ask_llm(
+            role = 'system',
+            message = f"""The tool execution could not be completed for this reason:
+            {self.tool_interrupt['reason']}
+            
+            The tool was called with this input:
+            {args_value}
+            
+            The user was asked to confirm if arguments are correct or if he wanted to provide some modification.
+            
+            The user replied: "{response}".
+            
+            If the user has answered affirmatively to the input arguments it respond True and nothing else.
+            If the user has added details or specified changes in the input parameters, respond False and nothing else.
+            If the user asked to interrupt the tool process and exit, return None and nothing else.
+            """,
+            eval_output = True
+        )   
+        return provided_output
+    
+    
+    
     def handle(self, tool, interupt_data):
         super().handle(tool, interupt_data)
         
@@ -210,9 +236,47 @@ class BaseToolInterruptArgsConfirmationHandler(BaseToolInterruptHandler):
             "interrupt_type": BaseToolInterrupt.BaseToolInterruptType.CONFIRM_ARGS
         })
         response = interruption.get('response', 'User did not provide any response.')
-        provided_args = self._generate_provided_args(response)
         
-        if provided_args is None:
+        # DOC: OLD WAY
+        # provided_args = self._generate_provided_args(response) 
+        # if provided_args is None:
+        #     remove_tool_message = RemoveMessage(self.tool_message.id)
+        #     system_message = SystemMessage(content=f"User choose to exit the tool process with this response: {response}")            
+        #     return {
+        #         'goto': END,
+        #         'update': { 
+        #             "messages": [remove_tool_message, system_message],
+        #             "node_params": { N.CHATBOT_UPDATE_MESSAGES: { "update_messages": [remove_tool_message, system_message] } }
+        #         }
+        #     }
+        # else:
+        #     self.tool_message.tool_calls[-1]["args"].update(provided_args)
+        #     self.tool.execution_confirmed = True
+        #     return {
+        #         'goto': self.tool_handler_node,
+        #         'update': { 
+        #             "messages": [self.tool_message]
+        #         }
+        #     }
+        # DOC: NEW WAY
+        provided_args = self._classify_output_confirmation(response)
+        if provided_args is True:
+            self.tool.execution_confirmed = True
+            return {
+                'goto': self.tool_handler_node,
+                'update': { "messages": [self.tool_message] }
+            }
+        elif provided_args is False:
+            remove_tool_message = RemoveMessage(self.tool_message.id)
+            system_message = SystemMessage(content=f"User choose to update it's original request with this additional informations: {response}")
+            return {
+                'goto': END,
+                'update': { 
+                    # "messages": [remove_tool_message, system_message],
+                    "node_params": { N.CHATBOT_UPDATE_MESSAGES: { "update_messages": [remove_tool_message, system_message] } },
+                }
+            }
+        else:
             remove_tool_message = RemoveMessage(self.tool_message.id)
             system_message = SystemMessage(content=f"User choose to exit the tool process with this response: {response}")            
             return {
@@ -222,17 +286,7 @@ class BaseToolInterruptArgsConfirmationHandler(BaseToolInterruptHandler):
                     "node_params": { N.CHATBOT_UPDATE_MESSAGES: { "update_messages": [remove_tool_message, system_message] } }
                 }
             }
-        
-        else:
-            self.tool_message.tool_calls[-1]["args"].update(provided_args)
-            self.tool.execution_confirmed = True
-            return {
-                'goto': self.tool_handler_node,
-                'update': { 
-                    "messages": [self.tool_message]
-                }
-            }
-            
+
             
 class BaseToolInterruptOutputConfirmationHandler(BaseToolInterruptHandler):
     

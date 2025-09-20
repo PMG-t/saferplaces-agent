@@ -57,10 +57,10 @@ llm_with_tools = utils._base_llm.bind_tools([tool for tool in tools_map.values()
 
 def set_tool_choice(tool_choice: list[str] | None = None) -> Runnable[LanguageModelInput, BaseMessage]:
     if tool_choice is None or len(tool_choice) == 0:
-        print('\n ########## Bind all tools \n')
+        print('>>> [bind all tools]')
         llm_with_tools = utils._base_llm.bind_tools([tool for tool in tools_map.values()])
     else:
-        print('\n ########## Bind choice tools \n', tool_choice)
+        print(f'>>> [bind choice tools]: {tool_choice}')
         tool_choice = [tools_map[tool_name] for tool_name in tool_choice if tool_name in tools_map]
         llm_with_tools = utils._base_llm.bind_tools(tool_choice)
     return llm_with_tools
@@ -68,8 +68,6 @@ def set_tool_choice(tool_choice: list[str] | None = None) -> Runnable[LanguageMo
 
 def chatbot_update_messages(state: BaseGraphState):
     """Update the messages in the state with the new messages."""
-    print('---call chatbot_update_messages---')
-    print(state.get("node_params", dict()).get(N.CHATBOT_UPDATE_MESSAGES, dict()))
     messages = state.get("node_params", dict()).get(N.CHATBOT_UPDATE_MESSAGES, dict()).get("update_messages", [])
     return {'messages': messages, 'node_params': {N.CHATBOT_UPDATE_MESSAGES: { 'update_messages': None }}}
 
@@ -77,8 +75,6 @@ def chatbot_update_messages(state: BaseGraphState):
 def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESSAGES, N.DEMO_SUBGRAPH, N.CREATE_PROJECT_SUBGRAPH, N.FLOODING_RAINFALL_SUBGRAPH, N.SAFERPLACES_API_SUBGRAPH, N.SAFERCAST_API_SUBGRAPH]]:     # type: ignore
     state["messages"] = state.get("messages", [])
 
-    print(f'----layers: {state.get("layer_registry", [])}')
-    
     if len(state["messages"]) > 0:
         
         if state.get("node_params", dict()).get(N.CHATBOT_UPDATE_MESSAGES, dict()).get("update_messages", None) is not None:

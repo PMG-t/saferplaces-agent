@@ -100,6 +100,7 @@ class ChatHandler:
         title: str | None = None,
         subtitle: Optional[str] = None,
         include_toc: bool = True,
+        include_header: bool = True
     ) -> str:
         """
         Genera un file Markdown 'bello' a partire da una lista di messaggi (chat dict).
@@ -115,8 +116,8 @@ class ChatHandler:
         chat = self.chat2json(chat)
         if not chat:
             return None
-        if path is None:
-            path = f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+        # if path is None:
+        #     path = f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
         if title is None:
             title = self.title if self.title else f"Chat Markdown {datetime.now().isoformat()}"
                     
@@ -164,36 +165,38 @@ class ChatHandler:
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         lines: List[str] = []
 
-        # Front matter leggero (opzionale)
-        lines.append(f"---")
-        lines.append(f'title: "{title}"')
-        if subtitle:
-            lines.append(f'subtitle: "{subtitle}"')
-        lines.append(f"generated: {now}")
-        lines.append(f"---\n")
 
-        # Header
-        lines.append(f"# {title}")
-        if subtitle:
-            lines.append(f"_{subtitle}_")
-        lines.append(f"*Generato il {now}*")
-        lines.append("")
-        lines.append("**Legenda**: 👤 User · 🤖 Assistant · 🛠️ Tool · ⏸️ Interrupt")
-        lines.append("")
+        if include_header:
+            # Front matter leggero (opzionale)
+            lines.append(f"---")
+            lines.append(f'title: "{title}"')
+            if subtitle:
+                lines.append(f'subtitle: "{subtitle}"')
+            lines.append(f"generated: {now}")
+            lines.append(f"---\n")
 
-        # TOC
-        if include_toc:
-            lines.append("## Indice")
-            for i, msg in enumerate(chat, 1):
-                role = msg.get("role", "unknown")
-                meta = ROLE_META.get(role, {"emoji": "📦", "label": role.capitalize()})
-                snippet = (msg.get("content") or "").strip().split("\n")[0]
-                snippet = snippet if snippet else "(vuoto)"
-                # Limita snippet
-                if len(snippet) > 80:
-                    snippet = snippet[:77] + "…"
-                lines.append(f"- [{i:02d} · {meta['emoji']} {meta['label']} – {snippet}](#msg-{i:02d})")
+            # Header
+            lines.append(f"# {title}")
+            if subtitle:
+                lines.append(f"_{subtitle}_")
+            lines.append(f"*Generato il {now}*")
             lines.append("")
+            lines.append("**Legenda**: 👤 User · 🤖 Assistant · 🛠️ Tool · ⏸️ Interrupt")
+            lines.append("")
+
+            # TOC
+            if include_toc:
+                lines.append("## Indice")
+                for i, msg in enumerate(chat, 1):
+                    role = msg.get("role", "unknown")
+                    meta = ROLE_META.get(role, {"emoji": "📦", "label": role.capitalize()})
+                    snippet = (msg.get("content") or "").strip().split("\n")[0]
+                    snippet = snippet if snippet else "(vuoto)"
+                    # Limita snippet
+                    if len(snippet) > 80:
+                        snippet = snippet[:77] + "…"
+                    lines.append(f"- [{i:02d} · {meta['emoji']} {meta['label']} – {snippet}](#msg-{i:02d})")
+                lines.append("")
 
         # Messaggi
         for i, msg in enumerate(chat, 1):
@@ -290,7 +293,8 @@ class ChatHandler:
         markdown = "\n".join(lines).rstrip() + "\n"
 
         # Scrivi su file
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(markdown)
+        if path is not None:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(markdown)
 
         return markdown

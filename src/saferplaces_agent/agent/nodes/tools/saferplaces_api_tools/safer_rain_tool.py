@@ -14,103 +14,116 @@ from langchain_core.callbacks import (
 
 from agent import utils
 from agent import names as N
+from agent.common import states as GraphStates
 from agent.nodes.base import BaseAgentTool
+
+
+_URI_HINT = "HTTP(S) URL, S3 URI (s3://...)"
 
 
 class SaferRainInputSchema(BaseModel):
     """
-    Inputs for a tool that estimates flood extent and water depth from:
-    - a rainfall raster (GeoTIFF) and
-    - a DTM/DEM raster (GeoTIFF)
-    with optional precomputed water-depth raster.
-
-    Capabilities:
-    - read DEM and rainfall rasters from local/HTTP(S)/S3/VSIs,
-    - select input band and (optionally) convert to a target band index,
-    - reproject output to a target SRS (EPSG),
-    - run in 'batch' or 'lambda' execution mode,
-    - produce flood extent and per-pixel water depth.
+    Run a flood simulation using a terrain elevation raster (DEM/DTM) and rainfall input
+    (either a single numeric amount applied uniformly or a rainfall raster).
+    If the rainfall raster is multiband, bands are interpreted as a time series and
+    can be cumulatively summed over a band range.
     """
-    _URI_HINT = (
-        "Path/URI to a GeoTIFF. Supported forms include local paths, HTTP(S), S3, and GDAL VSIs: "
-        "e.g., '/data/dem.tif', 'https://host/file.tif', 's3://bucket/key.tif', '/vsis3/bucket/key.tif'."
-    )
 
-
-    # ----------------------------- Required inputs ---------------------------
+    # ----------------------------- Required inputs -----------------------------
     dem: str = Field(
+        ...,
         title="DEM (GeoTIFF)",
-        description=f"Digital Elevation Model raster. {_URI_HINT}",
+        description=(
+            "Digital Elevation Model raster used as ground elevation.\n"
+            "- You can pass a direct URL, S3 URI, or local path to a GeoTIFF.\n"
+            "- Or you can reference an **existing project raster layer** "
+            "from the Layer Registry (e.g., when the user says 'use the DTM of Rome').\n"
+            "- When a layer is referenced, use that layer's `src` value."
+        ),
         examples=[
-            "/data/dem.tif",
             "https://example.com/dem_10m.tif",
-            "s3://my-bucket/dems/siteA_dem.tif",
-            "/vsis3/my-bucket/dems/dem.tif",
+            "s3://bucket/project/dtm_rome.tif",
+            "Rome DTM"
         ],
         validation_alias=AliasChoices("dem", "dtm", "elevation", "dem_path"),
     )
 
-    rain: str | float = Field(
-        title="Rainfall data",
-        description=f"Rainfall value. It can be a raster at {_URI_HINT}. It also can be a float value for constant rainfall.",
+    rain: Union[str, float] = Field(
+        ...,
+        title="Rainfall input (raster or constant)",
+        description=(
+            "Rainfall data for the simulation.\n"
+            "- It can be a **numeric value** (uniform rainfall in millimeters applied to the whole DEM extent).\n"
+            "- Or a URL, S3 URI, or local path to a rainfall raster (GeoTIFF).\n"
+            "- It can be a reference an **existing project raster layer** "
+            "from the Layer Registry (e.g., 'use layer rainfall-*').\n"
+            "- When a layer is referenced, the tool will internally use that layer's `src` value."
+        ),
         examples=[
-            "/data/rain_24h.tif",
-            "https://example.com/rain/event_202505.tif",
-            "s3://my-bucket/rain/rain_001.tif",
+            25.0,
+            "https://example.com/rainfall_2025_05.tif",
+            "s3://bucket/project/rainfall_v1.tif",
+            "Rainfall V1"
         ],
         validation_alias=AliasChoices("rain", "rainfall", "rain_path", "precip", "precipitation"),
     )
 
-    # ----------------------------- Optional inputs ---------------------------
     water: Optional[str] = Field(
         default=None,
-        title="Water depth (GeoTIFF, optional)",
-        description=f"Optional precomputed water-depth raster. {_URI_HINT}",
+        title="Output Water Depth (GeoTIFF, optional)",
+        description=(
+            f"Destination {_URI_HINT} where the simulated water depth raster (GeoTIFF) will be written. "
+            "If omitted, the tool returns the path/URI produced by the execution environment."
+        ),
         examples=[
-            "/data/water_depth.tif",
-            "https://example.com/water_depth.tif",
+            "https://example.com/outputs/water_depth.tif",
             "s3://my-bucket/floods/wd.tif",
         ],
         validation_alias=AliasChoices("water", "waterdepth", "wd", "water_path"),
     )
 
-    # ------------------------------- Parameters ------------------------------
+    # ------------------------------- Parameters --------------------------------
     band: int = Field(
-        default=1,
-        title="Rain band index",
-        description="Band number to use from the rainfall raster (1-based).",
+        default=1,  # ???: Default should be None (ora t leas 1) → FIRST
+        title="Rain band start (1-based)",
+        description=(
+            "For multiband rainfall rasters: index of the first band to use (1-based). "
+            "If `rain` is numeric (constant), this is ignored."
+        ),
         examples=[1],
         validation_alias=AliasChoices("band", "rain_band", "input_band"),
     )
 
     to_band: int = Field(
-        default=1,
-        title="Target band index",
-        description="Band number to convert the rain data to (1-based).",
-        examples=[1],
-        validation_alias=AliasChoices("to_band", "target_band", "out_band"),
+        default=1,  # ???: Default should be None (ora t least -1) → LAST
+        title="Rain band end (1-based, inclusive)",
+        description=(
+            "For multiband rainfall rasters: index of the last band to include (inclusive, 1-based). "
+            "If `to_band` > `band`, rainfall is cumulatively summed over bands [band..to_band]. "
+            "If `rain` is numeric (constant), this is ignored."
+        ),
+        examples=[1, 3],
+        validation_alias=AliasChoices("to_band", "target_band", "out_band", "end_band"),
     )
 
     t_srs: Optional[str] = Field(
         default=None,
         title="Target SRS (EPSG)",
-        description='Target spatial reference for outputs, e.g., "EPSG:4326" or "EPSG:3857".',
-        examples=["EPSG:4326", "EPSG:3857"],
+        description=(
+            "Target spatial reference for outputs (e.g., 'EPSG:32633'). "
+            "If None, the DEM CRS is used."
+        ),
+        examples=["EPSG:32633", "EPSG:4326"],
         validation_alias=AliasChoices("t_srs", "target_srs", "crs", "out_crs"),
     )
 
     mode: Literal["lambda", "batch"] = Field(
-        default="batch",
+        default="lambda",
         title="Execution mode",
-        description='Execution mode: "lambda" for AWS Lambda, "batch" for AWS Batch.',
+        description='Execution backend: "lambda" for AWS Lambda, "batch" for AWS Batch. Default is "lambda".',
         examples=["batch", "lambda"],
         validation_alias=AliasChoices("mode", "execution_mode", "run_mode"),
     )
-
-    class Config:
-        # Impedisci campi sconosciuti; abilita uso dei nomi/alias indifferentemente
-        extra = "forbid"
-        populate_by_name = True
 
     
 # DOC: This is a demo tool to retrieve weather data.
@@ -121,39 +134,21 @@ class SaferRainTool(BaseAgentTool):
     def __init__(self, **kwargs):
         super().__init__(
             name = N.SAFER_RAIN_TOOL,
-            description =  """This tool computes flood extent and water depth over an AOI using a rainfall raster
-            and a DEM/DTM raster (both GeoTIFF). Optionally, it can ingest an existing water-depth
-            raster. It supports local paths as well as HTTP(S), S3, and GDAL VSI prefixes.
-
-            Capabilities:
-            - Read DEM (elevation) and rainfall rasters (GeoTIFF) from local/HTTP(S)/S3/VSIs.
-            - Select the rainfall input band ('band') and optionally convert it to a target band ('to_band').
-            - Reproject outputs to a target SRS (EPSG) if 't_srs' is provided.
-            - Execute in 'batch' (default) or 'lambda' mode for AWS environments.
-            - Produce flood extent and per-pixel water depth layers suitable for mapping/analysis.
-
-            Inputs:
-            - dem (string, required): DEM GeoTIFF path/URI. Examples: '/data/dem.tif', 'https://…/dem.tif', 's3://bucket/dem.tif'.
-            - rain (string | float, required): Rainfall value. It can be a GeoTIFF path/URI or a constant float value.
-            - water (string, optional): Precomputed water-depth GeoTIFF path/URI (if available).
-            - band (int, default=1): 1-based band index to read from the rainfall raster.
-            - to_band (int, default=1): 1-based band index for target band conversion.
-            - t_srs (string, optional): Target EPSG code for outputs, e.g., 'EPSG:4326'.
-            - mode ('batch' | 'lambda', default='batch'): Execution mode.
-
-            When to use:
-            - The user asks to estimate flood extent or water depth from rainfall and topography.
-            - The user provides (or references) a DEM and a rainfall GeoTIFF (optionally a water-depth raster).
-            - The user mentions AWS execution contexts (Batch/Lambda), band selection, or EPSG reprojection.
-
-            Behavior & assumptions:
-            - 'band' and 'to_band' are 1-based indices (>= 1).
-            - Input rasters must be GeoTIFFs; URIs can be local paths, HTTP(S), S3 ('s3://'), or GDAL VSI (e.g., '/vsis3/...').
-            - If 't_srs' is given, outputs are reprojected to that EPSG SRS.
-            - 'mode' controls runtime: 'batch' (default) for bulk processing, 'lambda' for serverless execution.
-
-            Output:
-            - Flood extent and water depth rasters aligned for downstream visualization and analysis.""",
+            description = (
+                "Run a **flood simulation** using a Digital Elevation Model (DEM) and rainfall input.\n\n"
+                "Rainfall can be provided as:\n"
+                "- A **constant numeric value** in millimeters (applied uniformly across the DEM extent), or\n"
+                "- A **rainfall raster** (GeoTIFF). If the raster is **multiband**, each band represents a time step, "
+                "and rainfall can be **cumulatively summed** between `band` and `to_band`.\n\n"
+                "**Layer Registry Integration:**\n"
+                "- The project context may include a set of preloaded geospatial layers (DEM, rainfall, etc.).\n"
+                "- For `dem` and `rain`, you can pass either a direct URL/S3 URI or **reference an existing project layer** "
+                "by its `src` as shown in the Layer Registry.\n"
+                "- When a layer is referenced by title, the tool will internally resolve it and use its `src` as input.\n\n"
+                "### Outputs:\n"
+                "- A **water-depth raster (GeoTIFF)** representing simulated flood depths over the DEM area. "
+                "If the `water` argument is omitted, the tool will return the path/URI of the generated file."
+            ),
             args_schema = SaferRainInputSchema,
             **kwargs
         )
@@ -169,12 +164,17 @@ class SaferRainTool(BaseAgentTool):
     # DOC: Inference rules ( i.e.: from location name to bbox ... )
     def _set_args_inference_rules(self) -> dict:
         def infer_water(**kwargs):
-            """Infer water file path based on the user ID."""
-            water = kwargs.get("water", f"saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/safer-rain-water.tif")
-            return water
-
+            """
+            Infer the S3 bucket destination based on user ID and project ID.
+            """
+            user_id = kwargs.get('user_id', 'test')
+            project_id = kwargs.get('project_id', 'dev')
+            bucket_name = os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')
+            water = kwargs.get('water', f"saferrain-out.tif")
+            return f"{bucket_name}/user=={user_id}/project=={project_id}/saferrain-out/{water}"
+            
         infer_rules = {
-            "water": infer_water
+            'water': infer_water
         }
         return infer_rules
         
@@ -209,40 +209,56 @@ class SaferRainTool(BaseAgentTool):
             
             # TEST: This is a simulated response for testing purposes
             'water_depth_file': "s3://saferplaces.co/Directed/data-fabric-rwl2/Rimini_coast_cropped_buildings_rain_240mm.tif",
-
-            'id': 'saferplacesapi.SaferBuildingsProcessor'
+        
         }
 
         # TODO: Check if the response is valid
         
         tool_response = {
-            'saferrain_response': api_response,
-            
-            # TODO: Move in a method createMapActions()
-            'map_actions': [
-                # {
-                #     'action': 'new_layer',
-                #     'layer_data': {
-                #         'name': 'digital twin dem',  # TODO: add a autoincrement code
-                #         'type': 'raster',
-                #         'src': api_response['water_depth_file'],
-                #         'styles': [
-                #             { 'name': 'waterdepth', 'type': 'scalar', 'colormap': 'blues' }
-                #         ]
-                #     }
-                # }
-                utils.map_action_new_layer(
-                    layer_name = 'digital twin dem',
-                    layer_src = api_response['water_depth_file'],
-                    layer_styles = [
-                        { 'name': 'waterdepth', 'type': 'scalar', 'colormap': 'blues' }
-                    ]
-                )
-                # TODO: Add action for each file (see above)
-            ]
+            'tool_response': api_response['water_depth_file'],
+            'updates': {
+                'layer_registry': self.graph_state.get('layer_registry', []) + [
+                    {
+                        'title': f"SaferRain Output",
+                        'description': f"SaferRain output file with flooding waterdepth from this inputs: ({', '.join([f'{k}: {v}' for k,v in kwargs.items() if k!='water'])})",
+                        'src': api_response['water_depth_file'],
+                        'type': 'raster',
+                        'metadata': dict()
+                    }
+                ]
+                if not GraphStates.src_layer_exists(self.graph_state, api_response['water_depth_file'])
+                else []
+            }
         }
         
-        print('\n', '-'*80, '\n')
+        # tool_response = {
+        #     'saferrain_response': api_response,
+            
+        #     # TODO: Move in a method createMapActions()
+        #     'map_actions': [
+        #         # {
+        #         #     'action': 'new_layer',
+        #         #     'layer_data': {
+        #         #         'name': 'digital twin dem',  # TODO: add a autoincrement code
+        #         #         'type': 'raster',
+        #         #         'src': api_response['water_depth_file'],
+        #         #         'styles': [
+        #         #             { 'name': 'waterdepth', 'type': 'scalar', 'colormap': 'blues' }
+        #         #         ]
+        #         #     }
+        #         # }
+        #         utils.map_action_new_layer(
+        #             layer_name = 'digital twin dem',
+        #             layer_src = api_response['water_depth_file'],
+        #             layer_styles = [
+        #                 { 'name': 'waterdepth', 'type': 'scalar', 'colormap': 'blues' }
+        #             ]
+        #         )
+        #         # TODO: Add action for each file (see above)
+        #     ]
+        # }
+        
+        # print('\n', '-'*80, '\n')
         
         return tool_response
         

@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import datetime
-
-from typing import Sequence, Any
-
 import json
+import datetime
 from textwrap import indent
 
-from langgraph.graph import MessagesState
 from typing_extensions import Annotated
+from typing import Sequence, Any
+
+
+from langchain_core.messages import SystemMessage
+
+from langgraph.graph import MessagesState
 
 from agent.common import utils
 
@@ -35,7 +37,7 @@ def src_layer_exists(graph_state: BaseGraphState, layer_src: str) -> bool:
     return any(layer.get('src') == layer_src for layer in graph_state.get('layer_registry', []))
 
 
-def build_layer_registry_system_message(graph_state: BaseGraphState) -> dict:
+def build_layer_registry_system_message(graph_state: BaseGraphState) -> SystemMessage:
     """
     Generate a system message dynamically from a list of layer dictionaries.
     
@@ -88,7 +90,4 @@ def build_layer_registry_system_message(graph_state: BaseGraphState) -> dict:
     lines.append("- If the type is 'vector', assume it contains geographic features like polygons, lines, or points.")
     lines.append("- If the type is 'raster', assume it contains gridded geospatial data.")
     lines.append("[/LAYER REGISTRY]")
-    return {
-        'role': 'system',
-        'content': "\n".join(lines)
-    }
+    return SystemMessage(content="\n".join(lines))
