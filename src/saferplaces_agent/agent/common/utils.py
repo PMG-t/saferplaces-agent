@@ -178,7 +178,22 @@ def merge_dictionaries(left: dict, right: dict) -> dict:
                 left[key] = value
         else:
             left[key] = value
-    return left            
+    return left     
+
+def merge_dict_sequences(left: Sequence[dict], right: Sequence[dict], unique_key: str | None = None) -> Sequence[dict]:
+    """Add two lists of dictionaries together, merging by unique_key if provided and updating the values."""
+    if unique_key is None:
+        return merge_sequences(left, right)
+    merged = {item[unique_key]: item for item in left}
+    for item in right:
+        if item[unique_key] in merged:
+            merged[item[unique_key]] = merge_dictionaries(merged[item[unique_key]], item)
+        else:
+            merged[item[unique_key]] = item       
+    return list(merged.values())
+
+def merge_layer_registry(left: Sequence[dict], right: Sequence[dict]) -> Sequence[dict]:
+    return merge_dict_sequences(left, right, unique_key='src')
             
 
 def is_human_message(message):

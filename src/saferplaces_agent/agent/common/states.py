@@ -23,7 +23,7 @@ class BaseGraphState(MessagesState):
     nowtime: str = datetime.datetime.now(tz=datetime.timezone.utc).replace(tzinfo=None).isoformat()
     node_history: Annotated[Sequence[str], utils.merge_sequences] = []
     node_params: Annotated[dict, utils.merge_dictionaries] = dict()
-    layer_registry: list[dict] = []
+    layer_registry: Annotated[Sequence[dict], utils.merge_layer_registry] = []
     avaliable_tools: list[str] = []
     
     user_id: str = None

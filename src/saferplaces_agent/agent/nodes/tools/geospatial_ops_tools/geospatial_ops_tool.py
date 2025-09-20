@@ -128,52 +128,8 @@ class GeospatialOpsTool(BaseAgentTool):
     # DOC: Inference rules ( i.e.: from location name to bbox ... )
 
     def _set_args_inference_rules(self) -> dict:
-
-        def infer_output_layer(**kwargs):
-            """Infer the output layer name based on the prompt."""
-            output_layer = kwargs.get('output_layer', None)
-            if output_layer is None:
-                output_layer = utils.ask_llm(
-                    role='system',
-                    message=f"""You are an assistant specialized in geospatial operations. 
-                    Decide whether the user's request requires creating a new output layer, and if so, propose a valid filename.
-
-                    Decision rules:
-                    1. **Do not create a layer** if the request is descriptive or statistical:
-                    - Examples: bounding box, centroid, area, perimeter, maximum/minimum/mean value of a raster, summary statistics.
-                    - In these cases, return "None".
-                    2. **Create a layer** only if the operation produces new or modified geospatial data that could be visualized on a map:
-                    - Examples: intersection, union, difference, clip, dissolve, spatial filtering that returns a dataset.
-                    3. If the user explicitly asks to save the result as a layer, always propose a filename.
-
-                    Naming rules (only when a layer is needed):
-                    - Lowercase, no spaces, only letters, numbers, and underscores (`_`).
-                    - File extension:
-                    - `.geojson` for vector data (points, lines, polygons, bounding boxes, filtered sets).
-                    - `.tif` for raster data (grids, clipped rasters, raster operations).
-                    - Filename only, no path or explanation.
-
-                    Output strictly one value:
-                    - Either the filename (e.g. `buildings_within_rome.geojson`, `elevation_difference.tif`).
-                    - Or `None` if no layer should be created.
-
-                    User request:
-                    "{kwargs['prompt']}"
-                    """,
-                    eval_output=True
-                )
-                if output_layer is None:
-                    return None
-                output_layer = output_layer.strip()
-                output_layer = f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/{output_layer}"
-            # TODO: Should come fron env variable
-            elif not (kwargs['output_layer'].startswith('s3://saferplaces.co/') or kwargs['output_layer'].startswith('https://s3.us-east-1.amazonaws.com/saferplaces.co/')):
-                output_layer = utils.justfname(kwargs['output_layer'])
-                output_layer = f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/{output_layer}"
-            return output_layer
-
         infer_rules = {
-            'output_file': lambda **kwargs: f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/{kwargs['output_file']}" if kwargs.get('output_file', None) is not None else None,
+            'output_file': lambda **kwargs: f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/project_id=={self.graph_state.get('project_id', 'test')}/{kwargs['output_file']}" if kwargs.get('output_file', None) is not None else None,
         }
         return infer_rules
 
@@ -307,7 +263,7 @@ Generate the code now. Only code. No comments.
             tool_updates = {
                 'layer_registry': self.graph_state.get('layer_registry', []) + [
                     {
-                        'title': f"{kwargs['output_file']}",
+                        'title': f"{utils.juststem(kwargs['output_file'])}",
                         'description': f"Generated data from the request: \"{kwargs['prompt']}\"",
                         'src': kwargs['output_file'],
                         'type': 'raster' if kwargs['output_file'].endswith(('.tif', '.tiff')) else 'vector',

@@ -18,6 +18,8 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "python-dateutil",
 
+    "boto3",
+
     "geopandas",
     "rasterio",
     "xarray",
