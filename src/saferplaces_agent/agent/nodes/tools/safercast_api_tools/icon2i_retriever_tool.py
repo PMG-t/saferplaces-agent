@@ -14,6 +14,7 @@ from langchain_core.callbacks import (
 
 from agent import utils
 from agent import names as N
+from agent.common import states as GraphStates
 from agent.nodes.base import base_models, BaseAgentTool
 
 
@@ -323,7 +324,20 @@ class ICON2IRetrieverTool(BaseAgentTool):
         # TODO: Check if the response is valid
         
         tool_response = {
-            'icon2i_retriever_response': api_response,
+            'tool_response': api_response,
+            'updates': {
+                'layer_registry': self.graph_state.get('layer_registry', []) + [
+                    {
+                        'title': f"ICON2I_{payload['inputs']['variable']}",
+                        'description': f"ICON2I {payload['inputs']['variable']} data for bbox {kwargs['bbox']} from {payload['inputs']['time_range'][0]} to {payload['inputs']['time_range'][1]}",
+                        'src': api_response['uri'],
+                        'type': 'raster',
+                        'metadata': dict()  # TODO: To be well defined (maybe class)
+                    }
+                ]
+                if not GraphStates.src_layer_exists(self.graph_state, api_response['uri'])
+                else []
+            }
         }
         
         print('\n', '-'*80, '\n')

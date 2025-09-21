@@ -156,7 +156,7 @@ class ICON2IIngestorTool(BaseAgentTool):
         # TODO: Check if the response is valid
         
         tool_response = {
-            'icon2i_ingestor_response': api_response,
+            'tool_response': api_response,
         }
         
         print('\n', '-'*80, '\n')

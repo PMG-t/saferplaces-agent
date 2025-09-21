@@ -404,7 +404,7 @@ class DPCRetrieverTool(BaseAgentTool):
         
         
         tool_response = {
-            'dpc_retriever_response': api_response,
+            'tool_response': api_response,
             'updates': {
                 'layer_registry': self.graph_state.get('layer_registry', []) + [
                     {

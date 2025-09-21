@@ -215,7 +215,7 @@ class SaferRainTool(BaseAgentTool):
         # TODO: Check if the response is valid
         
         tool_response = {
-            'tool_response': api_response['water_depth_file'],
+            'tool_response': api_response,
             'updates': {
                 'layer_registry': self.graph_state.get('layer_registry', []) + [
                     {

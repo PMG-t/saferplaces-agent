@@ -250,6 +250,8 @@ class GraphInterface:
             
                      
         stream_prompt = build_stream()
+        yield self.chat_handler.get_new_events
+        
         for event in self.G.stream(
             input = stream_prompt,
             config = self.config,
@@ -257,7 +259,8 @@ class GraphInterface:
         ):
             for event_value in event.values():
                 if event_value is not None:
-                    process_event_value(event_value)
+                    process_event_value(event_value)    
+                    yield self.chat_handler.get_new_events
                     
         self.on_end_event(stream_prompt) # ???: non so se serve forse
 
