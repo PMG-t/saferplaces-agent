@@ -1,6 +1,6 @@
 [project]
 name = "saferplaces-agent"
-version = "0.0.1"
+version = "0.0.3"
 description = "Starter template for making a new agent LangGraph."
 authors = [
     { name = "William Fu-Hinthorn", email = "13333726+hinthornw@users.noreply.github.com" },
@@ -35,9 +35,9 @@ requires = ["setuptools>=73.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["agent"]
-[tool.setuptools.package-dir]
-"agent" = "src/saferplaces_agent/agent"
+package-dir = {"" = "src"}
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
