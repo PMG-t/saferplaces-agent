@@ -90,8 +90,6 @@ def flooding_rainfall_main(state: BaseGraphState) -> Command[Literal[END, N.FLOO
                 if type(tool_args) is dict:
                     update_node_params[tool_name] = tool_args
                     
-        # TODO: RESTART FROM HERE - after complete sequence of subtool, we return here and we have to colllect and check te provided args then run main tool (that is api call "saferplaces/new-project?name=<provided-name>" ???)
-        
         return Command(goto=N.FLOODING_RAINFALL_DEFINE_RAIN_TOOL_RUNNER, update={'node_params': update_node_params})
     
     else:

@@ -313,12 +313,11 @@ class ICON2IRetrieverTool(BaseAgentTool):
         print(f"Response status code: {response.status_code} - {response.content}")
         response = response.json() 
         # TODO: Check output_code ...
+        # TODO: Check if the response is valid
 
         # TEST: Simulate a response for testing purposes
         # api_response = {}
         api_response = response
-
-        # TODO: Check if the response is valid
         
         tool_response = {
             'tool_response': api_response,

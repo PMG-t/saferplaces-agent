@@ -25,7 +25,6 @@ from agent.nodes.tools import (
  
 
 # DOC: Tools to be subsequently used in the subgraph
-# TODO: node implementation (all)
 select_dtm_tool = CreateProjectSelectDTMTool()
 select_buildings_tool = CreateProjectSelectBuildingsTool()
 select_infiltration_tool = CreateProjectSelectInfiltrationRateTool()

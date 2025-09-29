@@ -390,24 +390,21 @@ class SaferBuildingsTool(BaseAgentTool):
         # tool_response = {
         #     'saferbuildings_response': api_response['message']['body']['result'],
             
-        #     # TODO: Move in a method createMapActions()
         #     'map_actions': [
         #         {
         #             'action': 'new_layer',
         #             'layer_data': {
-        #                 'name': 'saferbuildings-water',  # TODO: add a autoincrement code
+        #                 'name': 'saferbuildings-water', 
         #                 'type': 'raster',
         #                 'src': kwargs['water']
-        #                 # TODO: style for leafmap (?)
         #             }
         #         },
         #         {
         #             'action': 'new_layer',
         #             'layer_data': {
-        #                 'name': 'saferbuildings-out',   # TODO: add a autoincrement code (same as the water layer)
+        #                 'name': 'saferbuildings-out',   
         #                 'type': 'vector',
         #                 'src': api_response['files']['file_building'],
-        #                 # TODO: style for leafmap (?) 
         #                 'styles': [
         #                     { 'name': 'flooded buildings', 'type': 'categoric', 'property': 'is_flooded', 'colormap': { 'true': '#FF0000', 'false': '#00FF00'} },
         #                     # { 'name': 'flood depth', 'type': 'numeric', 'property': 'wd_median', 'colormap': { 0: '#FFFFFF', 0.2: "#00D9FF", 0.4: "#4D7BE5", 0.6:"#9934E7", 0.8:"#FF0073" } }

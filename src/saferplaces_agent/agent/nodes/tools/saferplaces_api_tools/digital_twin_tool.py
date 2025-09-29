@@ -235,7 +235,8 @@ class DigitalTwinTool(BaseAgentTool):
         # response = requests.post(api_url, json=payload)
         # print(f"Response status code: {response.status_code} - {response.content}")
         # response = response.json() 
-        # # TODO: Check output_code ...
+        # TODO: Check output_code ...
+        # TODO: Check if the response is valid
         
         # TEST: Simulate a response for testing purposes
         api_response = {
@@ -260,8 +261,6 @@ class DigitalTwinTool(BaseAgentTool):
                 }
             }
         }
-        
-        # TODO: Check if the response is valid
         
         tool_response = {
             'tool_response': api_response,
@@ -313,13 +312,11 @@ class DigitalTwinTool(BaseAgentTool):
         
         # tool_response = {
         #     'digitaltwin_response': api_response,
-            
-        #     # TODO: Move in a method createMapActions()
         #     'map_actions': [
         #         {
         #             'action': 'new_layer',
         #             'layer_data': {
-        #                 'name': 'digital twin dem',  # TODO: add a autoincrement code
+        #                 'name': 'digital twin dem',
         #                 'type': 'raster',
         #                 'src': api_response['files']['file_dem'],
         #                 'styles': [
@@ -327,7 +324,6 @@ class DigitalTwinTool(BaseAgentTool):
         #                 ]
         #             }
         #         }
-        #         # TODO: Add action for each file (see above)
         #     ]
         # }
         
