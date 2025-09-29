@@ -14,6 +14,8 @@ from ..graph import graph
 from ..common import s3_utils, utils
 from .chat_handler import ChatHandler
 
+from IPython.display import display, Markdown
+
 class GraphInterface:
 
     def __init__(
@@ -276,6 +278,30 @@ class GraphInterface:
                     yield self.chat_handler.get_new_events
                     
         self.on_end_event(stream_prompt) # ???: non so se serve forse
+        
+        
+    def chat_markdown(self, user_prompt: str, display_output: bool = True):
+        # for e in self.user_prompt(
+        #     prompt = user_prompt,
+        #     state_updates = {
+        #         'avaliable_tools': []
+        #     }
+        # ):
+        #     if display_output:
+        #         display(Markdown(self.chat_handler.chat_to_markdown(chat=e, include_header=False)))
+        #     else:
+        #         yield Markdown(self.chat_handler.chat_to_markdown(chat=e, include_header=False))
+        gen = (
+            Markdown(self.chat_handler.chat_to_markdown(chat=e, include_header=False))
+            for e in self.user_prompt(prompt=user_prompt, state_updates={'avaliable_tools': []})
+        )
+
+        if display_output:
+            for md in gen:
+                display(md)
+        else:
+            yield from gen
+    
 
 class GraphRegistry:
 
