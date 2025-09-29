@@ -37,7 +37,10 @@ class GraphInterface:
         if self.project_id is not None:
             self.restore_state()
             
-        
+    @property
+    def graph_state(self):
+        """ graph_state - returns the graph state """
+        return self.G.get_state(self.config).values
             
     def restore_state(self):
         
@@ -54,14 +57,14 @@ class GraphInterface:
         _ = list( self.G.stream(
             input = { 
                 'messages': [ self.build_layer_registry_system_message(restored_layer_registry) ],
-                'layer_registry': restored_layer_registry 
+                'layer_registry': restored_layer_registry
             }, 
             config = self.config, stream_mode = 'updates'
         ) )
         
         
     def get_state(self, key: str | list | None = None, fallback: Any = None) -> Any:
-        state = self.G.get_state(self.config).values
+        state = self.graph_state
         if key is None:
             return state
         if isinstance(key, str):
@@ -108,6 +111,7 @@ class GraphInterface:
         return agent_interrupt_message
     
     def build_layer_registry_system_message(self, layer_registry):
+        # !!!: This is kinda duplicate function (see agent.common.states.build_layer_registry_system_message())
         """
         Generate a system message dynamically from a list of layer dictionaries.
         
@@ -124,6 +128,15 @@ class GraphInterface:
         """
         lines = []
         lines.append("[LAYER REGISTRY]")
+        # INFO: [CONTEXT ONLY — DO NOT ACT] could enforce the agent to not run any tool calls that are not explicitly requested by the user.
+        # lines.append("[CONTEXT ONLY — DO NOT ACT]")
+        # lines.append("This message lists available geospatial layers for reference.")
+        # lines.append("It is **read-only context** and **NOT** an instruction to run any tool.")
+        # lines.append("- Do **NOT** invoke tools, create new layers, or fetch data based on this message alone.")
+        # lines.append("- Take actions **only** if the user's **latest message** explicitly asks for them.")
+        # # lines.append("- Do **NOT** initialize DigitalTwinTool (or similar) unless the user asks to build/create/generate a digital twin.")
+        # lines.append("- If uncertain, ask a brief clarification.")
+        # lines.append("[/CONTEXT ONLY — DO NOT ACT]\n")
         lines.append("The following geospatial layers are currently available in the project.")
         lines.append("Each layer has a `title` that should be referenced in conversations or tool calls "
                     "when you need to use it. "
@@ -146,8 +159,7 @@ class GraphInterface:
                 lines.append(indent(meta_json, prefix="      "))
 
         lines.append("\nInstructions:")
-        lines.append("- When a user request can be satisfied by using one of these layers, prefer re-using "
-                    "the layer instead of creating a new one.")
+        lines.append("- When a user request can be satisfied by using one of these layers, prefer re-using the layer instead of creating a new one.")
         lines.append("- Always refer to the `title` when mentioning or selecting a layer in your tool arguments.")
         lines.append("- If the type is 'vector', assume it contains geographic features like polygons, lines, or points.")
         lines.append("- If the type is 'raster', assume it contains gridded geospatial data.")

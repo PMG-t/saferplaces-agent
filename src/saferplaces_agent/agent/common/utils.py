@@ -6,6 +6,7 @@ import re
 import ast
 import uuid
 import math
+import base64
 import hashlib
 import datetime
 import tempfile
@@ -106,6 +107,10 @@ def dedent(s: str, add_tab: int = 0, tab_first: bool = True) -> str:
         out = '\n'.join([tab * add_tab + line if (il==0 and tab_first) or (il>0) else line for il,line in enumerate(out_lines)])
     return out
 
+
+def b64uuid():
+    u = uuid.uuid4()
+    return base64.urlsafe_b64encode(u.bytes).rstrip(b'=').decode('ascii')
     
 # ENDREGION: [Generic utils]
 

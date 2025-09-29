@@ -26,7 +26,7 @@ class BaseGraphState(MessagesState):
     node_history: Annotated[Sequence[str], utils.merge_sequences] = []
     node_params: Annotated[dict, utils.merge_dictionaries] = dict()
     layer_registry: Annotated[Sequence[dict], utils.merge_layer_registry] = []
-    avaliable_tools: list[str] = []
+    avaliable_tools: list[str] | None = []
     
     user_id: str = None
     project_id: str = None    
@@ -62,6 +62,15 @@ def build_layer_registry_system_message(graph_state: BaseGraphState) -> SystemMe
 
     lines = []
     lines.append("[LAYER REGISTRY]")
+    # INFO: [CONTEXT ONLY — DO NOT ACT] could enforce the agent to not run any tool calls that are not explicitly requested by the user.
+    # lines.append("[CONTEXT ONLY — DO NOT ACT]")
+    # lines.append("This message lists available geospatial layers for reference.")
+    # lines.append("It is **read-only context** and **NOT** an instruction to run any tool.")
+    # lines.append("- Do **NOT** invoke tools, create new layers, or fetch data based on this message alone.")
+    # lines.append("- Take actions **only** if the user's **latest message** explicitly asks for them.")
+    # # lines.append("- Do **NOT** initialize DigitalTwinTool (or similar) unless the user asks to build/create/generate a digital twin.")
+    # lines.append("- If uncertain, ask a brief clarification.")
+    # lines.append("[/CONTEXT ONLY — DO NOT ACT]\n")
     lines.append("The following geospatial layers are currently available in the project.")
     lines.append("Each layer has a `title` that should be referenced in conversations or tool calls "
                 "when you need to use it. "
@@ -84,10 +93,10 @@ def build_layer_registry_system_message(graph_state: BaseGraphState) -> SystemMe
             lines.append(indent(meta_json, prefix="      "))
 
     lines.append("\nInstructions:")
-    lines.append("- When a user request can be satisfied by using one of these layers, prefer re-using "
-                "the layer instead of creating a new one.")
+    lines.append("- When a user request can be satisfied by using one of these layers, prefer re-using the layer instead of creating a new one.")
     lines.append("- Always refer to the `title` when mentioning or selecting a layer in your tool arguments.")
     lines.append("- If the type is 'vector', assume it contains geographic features like polygons, lines, or points.")
     lines.append("- If the type is 'raster', assume it contains gridded geospatial data.")
     lines.append("[/LAYER REGISTRY]")
+    
     return SystemMessage(content="\n".join(lines))
