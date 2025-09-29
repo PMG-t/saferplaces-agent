@@ -18,7 +18,7 @@ from langchain_core.callbacks import (
     CallbackManagerForToolRun,
 )
 
-from agent import utils
+from agent import utils, s3_utils
 from agent import states as GraphStates
 from agent import names as N
 from agent.nodes.base import BaseAgentTool
@@ -130,7 +130,7 @@ class GeospatialOpsTool(BaseAgentTool):
 
     def _set_args_inference_rules(self) -> dict:
         infer_rules = {
-            'output_file': lambda **kwargs: f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/project=={self.graph_state.get('project_id', 'test')}/{kwargs['output_file']}" if kwargs.get('output_file', None) is not None else None,
+            'output_file': lambda **kwargs: f"{s3}/{kwargs['output_file']}" if kwargs.get('output_file', None) is not None else None,
         }
         return infer_rules
 
@@ -143,31 +143,6 @@ class GeospatialOpsTool(BaseAgentTool):
     ):
 
         if not self.output_confirmed:
-            # def describe_layer_registry():
-            #     """Describe the layers available in the registry."""
-            #     layers = self.graph_state.get('layer_registry', [])
-            #     if not layers:
-            #         return "No layers available."
-            #     layer_descriptions = []
-            #     for layer in layers:
-            #         layer_description = []
-            #         layer_description.extend([
-            #             f"Layer: {layer['name']}",
-            #             f"- type: {layer['type']}",
-            #             f"- src: {layer['src']}"
-            #         ])
-            #         layer_descriptions.append('\n'.join(layer_description))
-            #     return '\n\n'.join(layer_descriptions)
-
-            print('\n\n' + '-'*80 + '\n')
-            print(f'layers: {self.graph_state.get("layer_registry", [])}')
-
-            # if 'output_file' in kwargs and kwargs['output_file'] is not None:
-            #     kwargs['output_file'] = f"s3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/{kwargs['output_file']}"
-
-            print(f'kwargs: {kwargs}')
-            print('\n' + '-'*80 + '\n')
-
             output = utils.ask_llm(
                 role='system',
                 message=[
@@ -282,8 +257,6 @@ Generate the code now. Only code. No comments.
                 'geospatial_ops_output': tool_output,
                 'updates': tool_updates,
             }
-
-        print('\n', '-'*80, '\n')
 
         return tool_response
 

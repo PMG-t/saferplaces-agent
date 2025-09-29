@@ -12,7 +12,7 @@ from langchain_core.callbacks import (
     CallbackManagerForToolRun,
 )
 
-from agent import utils
+from agent import utils, s3_utils
 from agent import names as N
 from agent.common import states as GraphStates
 from agent.nodes.base import base_models, BaseAgentTool
@@ -321,11 +321,8 @@ class SaferBuildingsTool(BaseAgentTool):
             """
             Infer the S3 bucket destination based on user ID and project ID.
             """
-            user_id = kwargs.get('user_id', 'test')
-            project_id = kwargs.get('project_id', 'dev')
-            bucket_name = os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')
             out = kwargs.get('out', f"saferbuildings_out.geojson")
-            return f"{bucket_name}/user=={user_id}/project=={project_id}/saferbuildings-out/{out}"
+            return f"{s3_utils._BASE_BUCKET}/saferbuildings-out/{out}"
             
         infer_rules = {
             'out': infer_out
@@ -359,13 +356,13 @@ class SaferBuildingsTool(BaseAgentTool):
         # TEST: Simulate a response for testing purposes
         api_response = {
             'files': {
-                'file_building': f"{os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')}/user=={self.graph_state.get('user_id', 'test')}/saferbuildings-out/Rimini_coast_flooded_deb-2407.geojson"
+                'file_building': f"{s3_utils._BASE_BUCKET}/saferbuildings-out/Rimini_coast_flooded_deb-2407.geojson"
             }, 
             'id': 'saferplacesapi.SaferBuildingsProcessor',
             'message': {
                 'body': {
                     'result': { 
-                        's3_uri': f"{os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')}/user=={self.graph_state.get('user_id', 'test')}/saferbuildings-out/Rimini_coast_flooded_deb-2407.geojson"
+                        's3_uri': f"{s3_utils._BASE_BUCKET}/saferbuildings-out/Rimini_coast_flooded_deb-2407.geojson"
                     }
                 }
             }

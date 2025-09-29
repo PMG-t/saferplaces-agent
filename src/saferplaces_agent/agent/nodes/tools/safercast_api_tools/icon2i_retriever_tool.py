@@ -12,7 +12,7 @@ from langchain_core.callbacks import (
     CallbackManagerForToolRun,
 )
 
-from agent import utils
+from agent import utils, s3_utils
 from agent import names as N
 from agent.common import states as GraphStates
 from agent.nodes.base import base_models, BaseAgentTool
@@ -267,10 +267,7 @@ class ICON2IRetrieverTool(BaseAgentTool):
             """
             Infer the S3 bucket destination based on user ID and project ID.
             """
-            user_id = kwargs.get('user_id', 'test')
-            project_id = kwargs.get('project_id', 'dev')
-            bucket_name = os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')
-            return f"{bucket_name}/user=={user_id}/project=={project_id}/icon2i-out"
+            return f"{s3_utils._BASE_BUCKET}/icon2i-out"
                   
         infer_rules = {
             'time_range': infer_time_range,

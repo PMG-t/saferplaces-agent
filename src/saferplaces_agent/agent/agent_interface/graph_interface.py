@@ -11,7 +11,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, Tool
 from langchain_core.load import load as lc_load
 
 from ..graph import graph
-from ..common import utils, s3_interface
+from ..common import s3_utils, utils
 from .chat_handler import ChatHandler
 
 class GraphInterface:
@@ -20,7 +20,7 @@ class GraphInterface:
         self, 
         thread_id: str,
         user_id: str,
-        project_id: str = None,
+        project_id: str,
     ):
         self.G: CompiledStateGraph = graph
         self.thread_id = thread_id
@@ -34,8 +34,8 @@ class GraphInterface:
         self.chat_events = []
         self.chat_handler = ChatHandler(chat_id=self.thread_id, title=f"Chat {user_id}", subtitle=f"Thread {thread_id}")
         
-        if self.project_id is not None:
-            self.restore_state()
+        s3_utils._BASE_BUCKET = f'{s3_utils._BASE_BUCKET}/user=={self.user_id}/project=={self.project_id}'
+        self.restore_state()
             
     @property
     def graph_state(self):
@@ -45,8 +45,8 @@ class GraphInterface:
     def restore_state(self):
         
         def restore_layer_registry():
-            lr_uri = f's3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.user_id}/project=={self.project_id}/layer_registry.json'
-            lr_fp = s3_interface.s3_download(uri=lr_uri, fileout=os.path.join(os.getcwd(), f'{self.user_id}__{self.project_id}__layer_registry.json'))   # TODO: TMP DIR! + garbage collect
+            lr_uri = f'{s3_utils._BASE_BUCKET}/layer_registry.json'
+            lr_fp = s3_utils.s3_download(uri=lr_uri, fileout=os.path.join(os.getcwd(), f'{self.user_id}__{self.project_id}__layer_registry.json'))   # TODO: TMP DIR! + garbage collect
             if lr_fp is not None and os.path.exists(lr_fp):
                 with open(lr_fp, 'r') as f:
                     layer_registry = json.load(f)
@@ -186,7 +186,7 @@ class GraphInterface:
                     lr_fp = os.path.join(os.getcwd(), f'{self.user_id}__{self.project_id}__layer_registry.json')
                     with open(lr_fp, 'w') as f:
                         json.dump(layer_registry, f, indent=4)
-                    _ = s3_interface.s3_upload(filename=lr_fp, uri=lr_uri, remove_src= True )
+                    _ = s3_utils.s3_upload(filename=lr_fp, uri=lr_uri, remove_src= True )
                     
             update_layer_registry(event_value)
         

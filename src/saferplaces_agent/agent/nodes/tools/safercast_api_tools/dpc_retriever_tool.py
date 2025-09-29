@@ -12,7 +12,7 @@ from langchain_core.callbacks import (
     CallbackManagerForToolRun,
 )
 
-from agent import utils
+from agent import utils, s3_utils
 from agent.common import states as GraphStates
 from agent import names as N
 from agent.nodes.base import base_models, BaseAgentTool
@@ -40,42 +40,6 @@ DPCProductCode = Literal[
     "RADAR_STATUS", # Radar site status (ON/OFF)
     "CAPPI1", "CAPPI2", "CAPPI3", "CAPPI4", "CAPPI5", "CAPPI6", "CAPPI7", "CAPPI8"  # CAPPI reflectivity at fixed altitude (1–8 km) – ~10min
 ]
-
-
-# ---- Bounding Box class ----
-# class BBox(BaseModel):
-#     """
-#     Bounding box in EPSG:4326 (WGS84).
-#     - `west` = min longitude
-#     - `south` = min latitude
-#     - `east` = max longitude
-#     - `north` = max latitude
-#     """
-#     west: float = Field(..., description="Minimum longitude (degrees), e.g., 10.0")
-#     south: float = Field(..., description="Minimum latitude (degrees), e.g., 44.0")
-#     east: float = Field(..., description="Maximum longitude (degrees), e.g., 12.0")
-#     north: float = Field(..., description="Maximum latitude (degrees), e.g., 46.0")
-
-#     def __str__(self):
-#         return f"{{\"west\": {self.west}, \"south\": {self.south}, \"east\": {self.east}, \"north\": {self.north}}}"
-    
-#     def to_list(self) -> List[float]:
-#         """
-#         Convert the bounding box to a list [west, south, east, north].
-#         """
-#         return [self.west, self.south, self.east, self.north]
-    
-#     def lat_range(self) -> List[float]:
-#         """
-#         Get the latitude range as [south, north].
-#         """
-#         return [self.south, self.north]
-    
-#     def long_range(self) -> List[float]:
-#         """
-#         Get the longitude range as [west, east].
-#         """
-#         return [self.west, self.east]
 
 
 # ---- Main schema ----
@@ -345,10 +309,7 @@ class DPCRetrieverTool(BaseAgentTool):
             """
             Infer the S3 bucket destination based on user ID and project ID.
             """
-            user_id = kwargs.get('user_id', 'test')
-            project_id = kwargs.get('project_id', 'dev')
-            bucket_name = os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')
-            return f"{bucket_name}/user=={user_id}/project=={project_id}/dpc-out"
+            return f"{s3_utils._BASE_BUCKET}/dpc-out"
                   
         infer_rules = {
             'time_range': infer_time_range,

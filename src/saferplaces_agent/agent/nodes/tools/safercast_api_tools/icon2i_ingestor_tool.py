@@ -12,7 +12,7 @@ from langchain_core.callbacks import (
     CallbackManagerForToolRun,
 )
 
-from agent import utils
+from agent import utils, s3_utils
 from agent import names as N
 from agent.nodes.base import BaseAgentTool
 
@@ -138,7 +138,7 @@ class ICON2IIngestorTool(BaseAgentTool):
                 "token": os.getenv("SAFERCAST_API_TOKEN"),
                 "user": os.getenv("SAFERCAST_API_USER"),
             } | {
-                "bucket_destination": f"{os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')}/user=={self.graph_state.get('user_id', 'test')}/icon2i-out"
+                "bucket_destination": f"{s3_utils._BASE_BUCKET}/icon2i-out"
             } | {
                 "debug": True,  # TEST: enable debug mode
             }

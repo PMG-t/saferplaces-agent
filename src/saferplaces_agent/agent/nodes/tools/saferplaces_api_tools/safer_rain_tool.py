@@ -12,7 +12,7 @@ from langchain_core.callbacks import (
     CallbackManagerForToolRun,
 )
 
-from agent import utils
+from agent import utils, s3_utils
 from agent import names as N
 from agent.common import states as GraphStates
 from agent.nodes.base import BaseAgentTool
@@ -167,11 +167,8 @@ class SaferRainTool(BaseAgentTool):
             """
             Infer the S3 bucket destination based on user ID and project ID.
             """
-            user_id = kwargs.get('user_id', 'test')
-            project_id = kwargs.get('project_id', 'dev')
-            bucket_name = os.getenv('BUCKET_NAME', 's3://saferplaces.co/SaferPlaces-Agent/dev')
             water = kwargs.get('water', f"saferrain-out.tif")
-            return f"{bucket_name}/user=={user_id}/project=={project_id}/saferrain-out/{water}"
+            return f"{s3_utils._BASE_BUCKET}/saferrain-out/{water}"
             
         infer_rules = {
             'water': infer_water

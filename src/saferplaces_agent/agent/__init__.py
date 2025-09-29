@@ -7,7 +7,8 @@ from . import common
 from .common import (
     states,
     names,
-    utils
+    utils,
+    s3_utils
 )
 
 from . import nodes

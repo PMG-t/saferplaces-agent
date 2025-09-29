@@ -12,6 +12,9 @@ Logger = Logger(__name__)
 from . import utils
 
 
+_BASE_BUCKET = f's3://{os.getenv("BUCKET_NAME", "saferplaces.co")}/{os.getenv("BUCKET_OUT_DIR", "SaferPlaces-Agent/dev")}'
+
+
 def iss3(filename):
     """
     iss3
