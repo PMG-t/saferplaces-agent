@@ -18,18 +18,6 @@ from agent.common import states as GraphStates
 from agent.nodes.base import base_models, BaseAgentTool
 
 
-class BBox(BaseModel):
-    """
-    Bounding box in EPSG:4326 (WGS84).
-    west=min lon, south=min lat, east=max lon, north=max lat.
-    Prefer this over list formats to avoid ordering mistakes.
-    """
-    west: float = Field(..., description="Minimum longitude (°), e.g., 9.12")
-    south: float = Field(..., description="Minimum latitude (°), e.g., 45.43")
-    east: float = Field(..., description="Maximum longitude (°), e.g., 9.24")
-    north: float = Field(..., description="Maximum latitude (°), e.g., 45.50")
-
-
 ProviderCode = Literal[
     "OVERTURE",
     "RER-REST/*",
@@ -116,7 +104,6 @@ class SaferBuildingsInputSchema(BaseModel):
         examples=["OVERTURE", "RER-REST/*", "VENEZIA-WFS/*"],
     )
 
-    
     # DOC: Disabled: too complex for now, will be added later
     # filters: Optional[Union[str, Dict[str, Any]]] = Field(
     #     default=None,

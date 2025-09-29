@@ -34,7 +34,7 @@ class GraphInterface:
         self.chat_events = []
         self.chat_handler = ChatHandler(chat_id=self.thread_id, title=f"Chat {user_id}", subtitle=f"Thread {thread_id}")
         
-        s3_utils._BASE_BUCKET = f'{s3_utils._BASE_BUCKET}/user=={self.user_id}/project=={self.project_id}'
+        s3_utils.setup_base_bucket(user_id=self.user_id, project_id=self.project_id)
         self.restore_state()
             
     @property
