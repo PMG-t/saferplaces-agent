@@ -31,6 +31,10 @@ os.makedirs(_temp_dir, exist_ok=True)
 def guid():
     return str(uuid.uuid4())
 
+def b64uuid():
+    u = uuid.uuid4()
+    return base64.urlsafe_b64encode(u.bytes).rstrip(b'=').decode('ascii')
+
 def hash_string(s, hash_method=hashlib.md5):
     return hash_method(s.encode('utf-8')).hexdigest()
 
@@ -106,13 +110,27 @@ def dedent(s: str, add_tab: int = 0, tab_first: bool = True) -> str:
         tab = ' ' * 4
         out = '\n'.join([tab * add_tab + line if (il==0 and tab_first) or (il>0) else line for il,line in enumerate(out_lines)])
     return out
-
-
-def b64uuid():
-    u = uuid.uuid4()
-    return base64.urlsafe_b64encode(u.bytes).rstrip(b'=').decode('ascii')
     
 # ENDREGION: [Generic utils]
+
+
+
+# REGION: [Disable arnings]
+
+def disable_warnings():
+    import warnings
+    
+    # DOC: Disable warnings from langchain
+    for warning in disable_langchain_warnings():
+        warnings.filterwarnings("ignore", category=warning)
+    
+def disable_langchain_warnings():
+    from langchain_core._api import LangChainBetaWarning
+    return [
+        LangChainBetaWarning,
+    ]
+
+# ENDREGION: [Disable arnings]
 
 
 

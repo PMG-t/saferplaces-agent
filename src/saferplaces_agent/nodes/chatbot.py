@@ -57,13 +57,10 @@ llm_with_tools = utils._base_llm.bind_tools([tool for tool in tools_map.values()
 
 def set_tool_choice(tool_choice: list[str] | None = None) -> Runnable[LanguageModelInput, BaseMessage]:
     if tool_choice is None:
-        print('>>> [no tools binded]')
         llm_with_tools = utils._base_llm.bind_tools([])
     elif len(tool_choice) == 0:
-        print('>>> [bind all tools]')
         llm_with_tools = utils._base_llm.bind_tools([tool for tool in tools_map.values()])
     else:
-        print(f'>>> [bind choice tools]: {tool_choice}')
         tool_choice = [tools_map[tool_name] for tool_name in tool_choice if tool_name in tools_map]
         llm_with_tools = utils._base_llm.bind_tools(tool_choice)
     return llm_with_tools
