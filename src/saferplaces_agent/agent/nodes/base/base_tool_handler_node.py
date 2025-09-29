@@ -109,6 +109,7 @@ class BaseToolHandlerNode:
             callback_result = self.on_handle_end_callback(**{'tool_output': result})  # DOC: Call the on_handle_end function if provided
             
             additional_updates = self.additional_ouput_state | tool_result_updates | callback_result.get('update', dict())   # TODO: correct with 'updates'
+            additional_updates_messages = additional_updates.pop('messages', [])
 
             next_node = callback_result.get('next_node', None)
             
@@ -119,12 +120,15 @@ class BaseToolHandlerNode:
                 return Command(
                     goto=next_node, 
                     update={
-                        "messages": [tool_response_message],
+                        "messages": [tool_response_message] + additional_updates_messages,
                         **additional_updates
                     }
                 )
             else:
-                return {"messages": tool_response_message, **additional_updates}
+                return {
+                    "messages": [tool_response_message] + additional_updates_messages, 
+                    **additional_updates
+                }
                 
                 
 

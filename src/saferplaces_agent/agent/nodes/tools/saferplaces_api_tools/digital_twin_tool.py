@@ -7,12 +7,13 @@ import requests
 from typing import Optional, Union, List, Dict, Any
 from pydantic import BaseModel, Field, AliasChoices, field_validator, model_validator
 
+from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
     CallbackManagerForToolRun,
 )
 
-from agent import utils
+from agent import utils, s3_utils
 from agent import names as N
 from agent.common import states as GraphStates
 from agent.nodes.base import base_models, BaseAgentTool
@@ -64,10 +65,10 @@ class DigitalTwinInputSchema(BaseModel):
     )
 
     dataset_building: str = Field(
-        default="OSM/BUILDINGS",
+        default="OVERTURE/BUILDINGS",
         title="Buildings dataset",
-        description="Provider/dataset to fetch building footprints. Default: 'OSM/BUILDINGS'.",
-        examples=["OSM/BUILDINGS"],
+        description="Provider/dataset to fetch building footprints. Default: 'OVERTURE/BUILDINGS'.",
+        examples=["OVERTURE/BUILDINGS"],
         validation_alias=AliasChoices("dataset_building", "building_dataset", "buildings_provider"),
     )
     
@@ -119,21 +120,21 @@ class DigitalTwinTool(BaseAgentTool):
 
                 "### What it creates\n"
                 "- **DEM/DTM raster**, resampled to the requested pixel size (`pixelsize`).\n"
-                "- **Building footprints** for the AOI from the selected provider (`dataset_building`, default: 'OSM/BUILDINGS').\n"
+                "- **Building footprints** for the AOI from the selected provider (`dataset_building`, default: 'OVERTURE/BUILDINGS').\n"
                 "- **Land-use/land-cover** layer for the AOI (`dataset_land_use`, default: 'ESA/WorldCover/v100').\n"
                 "- **Sea mask** that separates land and water areas within the AOI.\n"
                 "- All outputs are spatially aligned and clipped to the AOI.\n\n"
                 
                 "### Capabilities\n"
                 "- Fetch a DEM/DTM from the specified dataset (if given, otherwise from the auto-detected most suitable dataset).\n"
-                "- Retrieve **building footprints** from the given provider or use the default OSM-based source.\n"
+                "- Retrieve **building footprints** from the given provider or use the default OVERTURE-based source.\n"
                 "- Retrieve **land-use/land-cover** information for better classification of terrain and regions.\n"
                 "- Generate a **land/sea mask** covering the AOI.\n"
                 "- Produce a set of harmonized layers ready for mapping, simulation, or other geospatial analyses.\n\n"
 
                 "### Inputs\n"
                 "- `dataset_dem (optional): Identifier of the DEM/DTM dataset **or `None`**. If `None`, the tool **auto-selects** the best dataset. \n"
-                "- `dataset_building` (optional, default 'OSM/BUILDINGS'): Provider for building footprints.\n"
+                "- `dataset_building` (optional, default 'OVERTURE/BUILDINGS'): Provider for building footprints.\n"
                 "- `dataset_land_use` (optional, default 'ESA/WorldCover/v100'): Dataset for land-use/land-cover information.\n"
                 "- `bbox` (required): AOI as EPSG:4326 bounding box. Use named keys `west,south,east,north`. If user provides a location name, you have to infer the bounding box.\n"
                 "- `pixelsize` (optional): Desired DEM resolution in meters (> 0). Prefer None if user does not specify it, so the tool uses the native resolution of the DEM dataset.\n\n"
@@ -168,36 +169,7 @@ class DigitalTwinTool(BaseAgentTool):
     
     # DOC: Inference rules ( i.e.: from location name to bbox ... )
     def _set_args_inference_rules(self) -> dict:
-        # def infer_bbox(**kwargs):
-        #     print(f'\n\ninfer_bbox called with kwargs: {kwargs} \n\n')
-        #     def bounding_box_from_location_name(bbox):
-        #         if type(bbox) is str:
-        #             bbox = utils.ask_llm(
-        #                 role = 'system',
-        #                 message = f"""Please provide the bounding box coordinates for the area: {bbox} with format [min_x, min_y, max_x, max_y] in EPSG:4326 Coordinate Reference System. 
-        #                 Provide only the coordinates list without any additional text or explanation.""",
-        #                 eval_output = True
-        #             )
-        #             self.execution_confirmed = False
-        #         return bbox
-        #     def round_bounding_box(bbox):
-        #         deg_r = 3 # round 3 decimals of degree ~ 111.32 meters
-        #         if type(bbox) is list:
-        #             bbox = [
-        #                 utils.floor_decimals(bbox[0], deg_r),
-        #                 utils.floor_decimals(bbox[1], deg_r),
-        #                 utils.ceil_decimals(bbox[2], deg_r),
-        #                 utils.ceil_decimals(bbox[3], deg_r)
-        #             ]
-        #         return bbox
-        #     bbox = bounding_box_from_location_name(kwargs['bbox'])
-        #     bbox = round_bounding_box(bbox)
-        #     return bbox
-        
-        infer_rules = {
-            # 'bbox': infer_bbox
-        }
-        
+        infer_rules = dict()
         return infer_rules
         
     
@@ -207,125 +179,115 @@ class DigitalTwinTool(BaseAgentTool):
         /,
         **kwargs: Any,  # dict[str, Any] = None,
     ): 
-        # DOC: set params for api, we do dis by hand and not using arg_schema to have better control over the output
-        exec_uuid = utils.b64uuid()
-        workspace = f"saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/project=={self.graph_state.get('project_id', 'dev')}"
-        project = self.graph_state.get('project_id', f'digital-twin-tool-{exec_uuid}')
-        file_dem = f'digital_twin_dem-{exec_uuid}.tif'
-        file_building = f'digital_twin_building-{exec_uuid}.shp'
-        file_landuse = f'digital_twin_landuse-{exec_uuid}.tif'
-        file_dem_building = f'digital_twin_dem_building-{exec_uuid}.tif'
-        file_seamask = f'digital_twin_seamask-{exec_uuid}.tif'
-
-        # DOC: Call the SaferBuildings API ...
-        # api_root_local = "http://localhost:5000" # TEST: only when running locally
-        # api_url = f"{os.getenv('SAFERPLACES_API_ROOT')}/processes/digital-twin-process/execution"
-        # payload = { 
-        #     "inputs": kwargs  | {
-        #         "token": os.getenv("SAFERPLACES_API_TOKEN"),
-        #         "user": os.getenv("SAFERPLACES_API_USER"),
-        #     } | {
-        #         "workspace": f"saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}",
-        #         "project": "saferplaces-agent"    # TODO: variable from state (setted from client session in graph update like user_id)
-        #     } | {
-        #         "debug": True,  # TEST: enable debug mode
-        #     }
-        # }
-        # print(f"Executing {self.name} with args: {payload}")
-        # response = requests.post(api_url, json=payload)
-        # print(f"Response status code: {response.status_code} - {response.content}")
-        # response = response.json() 
-        # TODO: Check output_code ...
-        # TODO: Check if the response is valid
+        # DOC: Prepare the payload to Digital Twin API
+        api_url = f"{os.getenv('SAFERPLACES_API_ROOT', 'http://localhost:5000')}/processes/digital-twin-process/execution"
         
-        # TEST: Simulate a response for testing purposes
-        api_response = {
-            'files': {
-                # DOC: Use this when running with true API
-                # 'file_dem': f"{workspace}/api_data/{project}/{file_dem}",
-                # 'file_building': f"{workspace}/api_data/{project}/{file_building}",
-                # 'file_landuse': f"{workspace}/api_data/{project}/{file_landuse}",
-                # 'file_dem_building': f"{workspace}/api_data/{project}/{file_dem_building}",
-                # 'file_seamask': f"{workspace}/api_data/{project}/{file_seamask}"
+        exec_uuid = utils.b64uuid()
+        
+        kwargs['bbox'] = kwargs['bbox'].to_list()
+        
+        additional_args = {
+            "workspace": s3_utils._BASE_BUCKET.lstrip('s3://'),
+            "project": f'digital-twin-tool-out-{exec_uuid}',
+            "file_dem": f'digital_twin_dem-{exec_uuid}.tif',
+            "file_building": f'digital_twin_building-{exec_uuid}.shp',
+            "file_landuse": f'digital_twin_landuse-{exec_uuid}.tif',
+            "file_dem_building": f'digital_twin_dem_building-{exec_uuid}.tif',
+            "file_seamask": f'digital_twin_seamask-{exec_uuid}.tif',
+        }
+        
+        credentials_args = {
+            "user": os.getenv("SAFERPLACES_API_USER"),
+            "token": os.getenv("SAFERPLACES_API_TOKEN"),
+        }
+        
+        debug_args = {
+            "debug": True,  # TODO: use a global _is_debug_mode() to set this
+        }
 
-                # TEST: This is a simulated response for testing purposes
-                'file_dem': "s3://saferplaces.co/Directed/Rimini/dtm_cropped_32633.tif",
-
-            }, 
-            'id': 'saferplacesapi.DigitalTwinProcessor',
-            'message': {
-                'body': {
-                    'result': { 
-                        'demo': 'demo :('
-                    }
+        payload = { 
+            "inputs": {
+                **kwargs,               # DOC: This will include the args from the input schema
+                **additional_args,      # DOC: Additional args for the API call
+                **credentials_args,     # DOC: Credentials for the API call
+                **debug_args,           # DOC: Debug args for the API call
+            }
+        }
+        
+        # DOC: Call the Digital-Twin API ...
+        api_response = requests.post(api_url, json=payload)
+        
+        # DOC: If the API call fails, return an error response
+        if api_response.status_code != 200:
+            tool_response = {
+                'tool_response': {
+                    'error': f"Failed to execute Digital Twin API: {api_response.status_code} - {api_response.text}"
                 }
             }
-        }
         
-        tool_response = {
-            'tool_response': api_response,
-            
-            'updates': {
-                'layer_registry': self.graph_state.get('layer_registry', []) + [
-                    {
-                        'title': 'Digital Twin DEM',
-                        'description': 'Digital Twin DEM generated by SaferPlaces API',
-                        'type': 'raster',
-                        'src': api_response['files']['file_dem'],
-                        'metadata': dict(),
-                    }, 
-                ] if not GraphStates.src_layer_exists(self.graph_state, api_response['files']['file_dem']) else [] + [
-                    {
-                        'title': 'Digital Twin Buildings',
-                        'description': 'Digital Twin Buildings generated by SaferPlaces API',
-                        'type': 'vector',
-                        'src': api_response['files']['file_building'],
-                        'metadata': dict(),
-                    }
-                ] if not GraphStates.src_layer_exists(self.graph_state, api_response['files']['file_building']) else [] + [
-                    {
-                        'title': 'Digital Twin Land Use',
-                        'description': 'Digital Twin Land Use generated by SaferPlaces API',
-                        'type': 'raster',
-                        'src': api_response['files']['file_landuse'],
-                        'metadata': dict(),
-                    }
-                ] if not GraphStates.src_layer_exists(self.graph_state, api_response['files']['file_landuse']) else [] + [
-                    {
-                        'title': 'Digital Twin DEM + Buildings',
-                        'description': 'Digital Twin DEM + Buildings generated by SaferPlaces API',
-                        'type': 'raster',
-                        'src': api_response['files']['file_dem_building'],
-                        'metadata': dict(),
-                    }
-                ] if not GraphStates.src_layer_exists(self.graph_state, api_response['files']['file_dem_building']) else [] + [
-                    {
-                        'title': 'Digital Twin Sea Mask',
-                        'description': 'Digital Twin Sea Mask generated by SaferPlaces API',
-                        'type': 'raster',
-                        'src': api_response['files']['file_seamask'],
-                        'metadata': dict(),
-                    }
-                ] if not GraphStates.src_layer_exists(self.graph_state, api_response['files']['file_seamask']) else []
+        # DOC: If the API call is successful, process the response 
+        api_response = api_response.json()
+        if api_response.get('id') == 'digital-twin-process' and len(api_response.get('files', dict)) > 0:
+            tool_response = {
+                'tool_response': api_response,
+                'updates': {
+                    'layer_registry': self.graph_state.get('layer_registry', []) + [
+                        {
+                            'title': 'Digital Twin DEM',
+                            'description': 'Digital Twin DEM generated by SaferPlaces API',
+                            'type': 'raster',
+                            'src': api_response['files']['file_dem'],
+                            'metadata': dict(),
+                        }, 
+                    ] if not GraphStates.src_layer_exists(self.graph_state, api_response['files']['file_dem']) else [] + [
+                        {
+                            'title': 'Digital Twin Buildings',
+                            'description': 'Digital Twin Buildings generated by SaferPlaces API',
+                            'type': 'vector',
+                            'src': api_response['files']['file_building'],
+                            'metadata': dict(),
+                        }
+                    ] if not GraphStates.src_layer_exists(self.graph_state, api_response['files']['file_building']) else [] + [
+                        {
+                            'title': 'Digital Twin Land Use',
+                            'description': 'Digital Twin Land Use generated by SaferPlaces API',
+                            'type': 'raster',
+                            'src': api_response['files']['file_landuse'],
+                            'metadata': dict(),
+                        }
+                    ] if not GraphStates.src_layer_exists(self.graph_state, api_response['files']['file_landuse']) else [] + [
+                        {
+                            'title': 'Digital Twin DEM + Buildings',
+                            'description': 'Digital Twin DEM + Buildings generated by SaferPlaces API',
+                            'type': 'raster',
+                            'src': api_response['files']['file_dem_building'],
+                            'metadata': dict(),
+                        }
+                    ] if not GraphStates.src_layer_exists(self.graph_state, api_response['files']['file_dem_building']) else [] + [
+                        {
+                            'title': 'Digital Twin Sea Mask',
+                            'description': 'Digital Twin Sea Mask generated by SaferPlaces API',
+                            'type': 'raster',
+                            'src': api_response['files']['file_seamask'],
+                            'metadata': dict(),
+                        }
+                    ] if not GraphStates.src_layer_exists(self.graph_state, api_response['files']['file_seamask']) else []
+                }
             }
-        }
-        
-        # tool_response = {
-        #     'digitaltwin_response': api_response,
-        #     'map_actions': [
-        #         {
-        #             'action': 'new_layer',
-        #             'layer_data': {
-        #                 'name': 'digital twin dem',
-        #                 'type': 'raster',
-        #                 'src': api_response['files']['file_dem'],
-        #                 'styles': [
-        #                     { 'name': 'dtm', 'type': 'scalar', 'colormap': 'viridis' }
-        #                 ]
-        #             }
-        #         }
-        #     ]
-        # }
+            
+        # DOC: If the API call is successful but the response is not as expected, return an error response
+        else:
+            tool_response = {
+                'tool_response': {
+                    'error': f"Unexpected response from Digital Twin API: {api_response}"
+                }
+            }
+            
+        # DOC: If there is an error in the tool response, update the messages to guide agent's next steps
+        if 'error' in tool_response['tool_response']:
+            tool_response['updates'] = {
+                'messages': [ SystemMessage(content="An error occurred while executing the Digital Twin tool. Explain the error to the user and then ask him if he wants to retry or not.") ],
+            }
         
         return tool_response
         

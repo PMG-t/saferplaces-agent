@@ -183,7 +183,7 @@ class GraphInterface:
             def update_layer_registry(event_value):
                 if type(event_value) is dict and event_value.get('layer_registry'):
                     layer_registry = self.get_state('layer_registry')
-                    lr_uri = f's3://saferplaces.co/SaferPlaces-Agent/dev/user=={self.user_id}/project=={self.project_id}/layer_registry.json'
+                    lr_uri = f'{s3_utils._BASE_BUCKET}/layer_registry.json'
                     lr_fp = os.path.join(os.getcwd(), f'{self.user_id}__{self.project_id}__layer_registry.json')
                     with open(lr_fp, 'w') as f:
                         json.dump(layer_registry, f, indent=4)
