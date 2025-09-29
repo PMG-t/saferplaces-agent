@@ -179,7 +179,7 @@ class DigitalTwinTool(BaseAgentTool):
         /,
         **kwargs: Any,  # dict[str, Any] = None,
     ): 
-        # DOC: Prepare the payload to Digital Twin API
+        # DOC: Prepare the payload for Digital-Twin API
         api_url = f"{os.getenv('SAFERPLACES_API_ROOT', 'http://localhost:5000')}/processes/digital-twin-process/execution"
         
         exec_uuid = utils.b64uuid()
@@ -188,12 +188,12 @@ class DigitalTwinTool(BaseAgentTool):
         
         additional_args = {
             "workspace": s3_utils._BASE_BUCKET.lstrip('s3://'),
-            "project": f'digital-twin-tool-out-{exec_uuid}',
-            "file_dem": f'digital_twin_dem-{exec_uuid}.tif',
-            "file_building": f'digital_twin_building-{exec_uuid}.shp',
-            "file_landuse": f'digital_twin_landuse-{exec_uuid}.tif',
-            "file_dem_building": f'digital_twin_dem_building-{exec_uuid}.tif',
-            "file_seamask": f'digital_twin_seamask-{exec_uuid}.tif',
+            "project": f'digitaltwin-out-{exec_uuid}',
+            "file_dem": f'dem-{exec_uuid}.tif',
+            "file_building": f'building-{exec_uuid}.shp',
+            "file_landuse": f'landuse-{exec_uuid}.tif',
+            "file_dem_building": f'dem_building-{exec_uuid}.tif',
+            "file_seamask": f'seamask-{exec_uuid}.tif',
         }
         
         credentials_args = {

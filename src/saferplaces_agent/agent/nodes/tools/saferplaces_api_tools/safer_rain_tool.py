@@ -7,6 +7,7 @@ import requests
 from typing import Optional, Literal, Union, List, Dict, Any
 from pydantic import BaseModel, Field, AliasChoices, field_validator, model_validator
 
+from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
     CallbackManagerForToolRun,
@@ -167,7 +168,7 @@ class SaferRainTool(BaseAgentTool):
             """
             Infer the S3 bucket destination based on user ID and project ID.
             """
-            water = kwargs.get('water', f"saferrain-out.tif")
+            water = kwargs.get('water', f"water-depth-{utils.b64uuid()}.tif")
             return f"{s3_utils._BASE_BUCKET}/saferrain-out/{water}"
             
         infer_rules = {
@@ -182,78 +183,70 @@ class SaferRainTool(BaseAgentTool):
         /,
         **kwargs: Any,  # dict[str, Any] = None,
     ): 
-        # DOC: Call the SaferBuildings API ...
-        # api_root_local = "http://localhost:5000" # TEST: only when running locally
-        # api_url = f"{os.getenv('SAFERPLACES_API_ROOT')}/processes/safer-rain-process/execution"
-        # payload = { 
-        #     "inputs": kwargs  | {
-        #         "token": os.getenv("SAFERPLACES_API_TOKEN"),
-        #         "user": os.getenv("SAFERPLACES_API_USER"),
-        #     } | {
-        #         "debug": True,  # TEST: enable debug mode
-        #     }
-        # }
-        # print(f"Executing {self.name} with args: {payload}")
-        # response = requests.post(api_url, json=payload)
-        # print(f"Response status code: {response.status_code} - {response.content}")
-        # response = response.json() 
-        # # TODO: Check output_code ...
-
-        # TEST: Simulate a response for testing purposes
-        api_response = {
-            # DOC: Use this when running with true API
-            # 'water_depth_file': kwargs.get('water', f"saferplaces.co/SaferPlaces-Agent/dev/user=={self.graph_state.get('user_id', 'test')}/safer-rain-water.tif"),
-            
-            # TEST: This is a simulated response for testing purposes
-            'water_depth_file': "s3://saferplaces.co/Directed/data-fabric-rwl2/Rimini_coast_cropped_buildings_rain_240mm.tif",
+        # DOC: Prepare the payload for Safer-Rain API
+        api_url = f"{os.getenv('SAFERPLACES_API_ROOT', 'http://localhost:5000')}/processes/digital-twin-process/execution"
         
+        credentials_args = {
+            "user": os.getenv("SAFERPLACES_API_USER"),
+            "token": os.getenv("SAFERPLACES_API_TOKEN"),
         }
-
-        # TODO: Check if the response is valid
         
-        tool_response = {
-            'tool_response': api_response,
-            'updates': {
-                'layer_registry': self.graph_state.get('layer_registry', []) + [
-                    {
-                        'title': f"SaferRain Output",
-                        'description': f"SaferRain output file with flooding waterdepth from this inputs: ({', '.join([f'{k}: {v}' for k,v in kwargs.items() if k!='water'])})",
-                        'src': api_response['water_depth_file'],
-                        'type': 'raster',
-                        'metadata': dict()
-                    }
-                ]
-                if not GraphStates.src_layer_exists(self.graph_state, api_response['water_depth_file'])
-                else []
+        debug_args = {
+            "debug": True,  # TODO: use a global _is_debug_mode() to set this
+        }
+        
+        payload = {
+            "inputs": {
+                **kwargs,               # DOC: Unpack the tool arguments
+                **credentials_args,     # DOC: Add credentials
+                **debug_args,           # DOC: Add debug mode
             }
         }
         
-        # tool_response = {
-        #     'saferrain_response': api_response,
-            
-        #     'map_actions': [
-        #         # {
-        #         #     'action': 'new_layer',
-        #         #     'layer_data': {
-        #         #         'name': 'digital twin dem',
-        #         #         'type': 'raster',
-        #         #         'src': api_response['water_depth_file'],
-        #         #         'styles': [
-        #         #             { 'name': 'waterdepth', 'type': 'scalar', 'colormap': 'blues' }
-        #         #         ]
-        #         #     }
-        #         # }
-        #         utils.map_action_new_layer(
-        #             layer_name = 'digital twin dem',
-        #             layer_src = api_response['water_depth_file'],
-        #             layer_styles = [
-        #                 { 'name': 'waterdepth', 'type': 'scalar', 'colormap': 'blues' }
-        #             ]
-        #         )
-        #     ]
-        # }
+        # DOC: Call the Safer-Rain API ...
+        api_response = requests.post(api_url, json=payload)
         
-        # print('\n', '-'*80, '\n')
+        # DOC: If the API call fails, return an error response
+        if api_response.status_code != 200:
+            tool_response = {
+                'tool_response': {
+                    'error': f"Failed to execute Safer Rain API: {api_response.status_code} - {api_response.text}"
+                }
+            }
+            
+        # DOC: If the API call is successful, process the response 
+        api_response = api_response.json()
+        if 'water_depth_file' in api_response:
+            tool_response = {
+                'tool_response': api_response,
+                'updates': {
+                    'layer_registry': self.graph_state.get('layer_registry', []) + [
+                        {
+                            'title': f"SaferRain Output",
+                            'description': f"SaferRain output file with flooding waterdepth from this inputs: ({', '.join([f'{k}: {v}' for k,v in kwargs.items() if k!='water'])})",
+                            'src': api_response['water_depth_file'],
+                            'type': 'raster',
+                            'metadata': dict()
+                        }
+                    ]
+                    if not GraphStates.src_layer_exists(self.graph_state, api_response['water_depth_file'])
+                    else []
+                }
+            }
+            
+        # DOC: If the API call is successful but the response is not as expected, return an error response
+        else:
+            tool_response = {
+                'tool_response': {
+                    'error': f"Unexpected response from Safer Rain API: {api_response}"
+                }
+            }
+            
+        # DOC: If there is an error in the tool response, update the messages to guide agent's next steps
+        if 'error' in tool_response['tool_response']:
+            tool_response['updates'] = {
+                'messages': [ SystemMessage(content="An error occurred while executing the Safer Rain tool. Explain the error to the user and then ask him if he wants to retry or not.") ]
+            }
         
         return tool_response
         

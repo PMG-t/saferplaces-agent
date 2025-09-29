@@ -7,6 +7,7 @@ import requests
 from typing import Optional, Union, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, AliasChoices, field_validator, model_validator
 
+from langchain_core.messages import SystemMessage
 from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
     CallbackManagerForToolRun,
@@ -221,16 +222,7 @@ class SaferBuildingsInputSchema(BaseModel):
             "https://example.com/results/flooded_buildings.geojson",
             "s3://bucket/project/output/flooded_buildings.geojson"
         ],
-    )
-
-    # --- Diagnostics ---
-    debug: bool = Field(
-        default=False,
-        title="Debug Mode",
-        description="Enable detailed logging for troubleshooting.",
-        examples=[True],
-    )
-        
+    )        
 
 
 
@@ -308,7 +300,7 @@ class SaferBuildingsTool(BaseAgentTool):
             """
             Infer the S3 bucket destination based on user ID and project ID.
             """
-            out = kwargs.get('out', f"saferbuildings_out.geojson")
+            out = kwargs.get('out', f"flooded-buildings-{utils.b64uuid()}.geojson")
             return f"{s3_utils._BASE_BUCKET}/saferbuildings-out/{out}"
             
         infer_rules = {
@@ -323,86 +315,72 @@ class SaferBuildingsTool(BaseAgentTool):
         /,
         **kwargs: Any,  # dict[str, Any] = None,
     ): 
-        # DOC: Call the SaferBuildings API ...
-        # api_root_local = "http://localhost:5000" # TEST: only when running locally
-        # api_url = f"{os.getenv('SAFERPLACES_API_ROOT')}/processes/safer-buildings-process/execution"
-        # payload = { 
-        #     "inputs": kwargs  | {
-        #         "token": os.getenv("SAFERPLACES_API_TOKEN"),
-        #         "user": os.getenv("SAFERPLACES_API_USER"),
-        #     } | {
-        #         "debug": True,  # TEST: enable debug mode
-        #     }
-        # }
-        # print(f"Executing {self.name} with args: {payload}")
-        # response = requests.post(api_url, json=payload)
-        # print(f"Response status code: {response.status_code} - {response.content}")
-        # response = response.json() 
-        # TODO: Check output_code ...
-        # TODO: Check if the response is valid
+        # DOC: Prepare the payload to Safer-Buildings API
+        api_url = f"{os.getenv('SAFERPLACES_API_ROOT', 'http://localhost:5000')}/processes/safer-buildings-process/execution"
         
-        # TEST: Simulate a response for testing purposes
-        api_response = {
-            'files': {
-                'file_building': f"{s3_utils._BASE_BUCKET}/saferbuildings-out/Rimini_coast_flooded_deb-2407.geojson"
-            }, 
-            'id': 'saferplacesapi.SaferBuildingsProcessor',
-            'message': {
-                'body': {
-                    'result': { 
-                        's3_uri': f"{s3_utils._BASE_BUCKET}/saferbuildings-out/Rimini_coast_flooded_deb-2407.geojson"
-                    }
+        kwargs['bbox'] = kwargs['bbox'].to_list() if 'bbox' in kwargs else None
+        
+        credential_args = {
+            "user": os.getenv("SAFERPLACES_API_USER"),
+            "token": os.getenv("SAFERPLACES_API_TOKEN"),
+        }
+        
+        debug_args = {
+            "debug": True,  # TODO: use a global _is_debug_mode() to set this
+        }
+        
+        payload = {
+            "inputs": {
+                **kwargs,               # DOC: Unpack the tool arguments
+                **credential_args,      # DOC: Add credentials
+                **debug_args,           # DOC: Add debug mode
+            }
+        }
+        
+        # DOC: Call the Safer-Buildings API
+        api_response = requests.post(api_url, json=payload)
+        
+        # DOC: If the api call fails, return an error response
+        if api_response.status_code != 200:
+            tool_response = {
+                'tool_response': {
+                    'error': f"Failed to execute Safer Rain API: {api_response.status_code} - {api_response.text}"
                 }
             }
-        }
-        
-        tool_response = {
-            'tool_response': api_response['message']['body']['result'],
-            'updates': {
-                'layer_registry': self.graph_state.get('layer_registry', []) + [
-                    {
-                        'title': f"SaferBuildings Output",
-                        'description': f"SaferBuildings output file with flooded buildings from this inputs: ({', '.join([f'{k}: {v}' for k,v in kwargs.items() if k!='out'])})",
-                        'src': api_response['message']['body']['result']['s3_uri'],
-                        'type': 'vector',
-                        'metadata': dict()
-                    }
-                ]
-                if not GraphStates.src_layer_exists(self.graph_state, api_response['message']['body']['result']['s3_uri'])
-                else []
-            }
-        }
-        
-        # tool_response = {
-        #     'saferbuildings_response': api_response['message']['body']['result'],
             
-        #     'map_actions': [
-        #         {
-        #             'action': 'new_layer',
-        #             'layer_data': {
-        #                 'name': 'saferbuildings-water', 
-        #                 'type': 'raster',
-        #                 'src': kwargs['water']
-        #             }
-        #         },
-        #         {
-        #             'action': 'new_layer',
-        #             'layer_data': {
-        #                 'name': 'saferbuildings-out',   
-        #                 'type': 'vector',
-        #                 'src': api_response['files']['file_building'],
-        #                 'styles': [
-        #                     { 'name': 'flooded buildings', 'type': 'categoric', 'property': 'is_flooded', 'colormap': { 'true': '#FF0000', 'false': '#00FF00'} },
-        #                     # { 'name': 'flood depth', 'type': 'numeric', 'property': 'wd_median', 'colormap': { 0: '#FFFFFF', 0.2: "#00D9FF", 0.4: "#4D7BE5", 0.6:"#9934E7", 0.8:"#FF0073" } }
-        #                 ]
-        #             }
-        #         }
-        #     ]
-        # }
-        
-        # print('\n', '-'*80, '\n')
-        # print('tool_response:', tool_response)
-        # print('\n', '-'*80, '\n')
+        # DOC: If the API call is successful, process the response 
+        api_response = api_response.json()
+        if api_response.get('id') == 'saferplacesapi.SaferBuildingsProcessor' and len(api_response.get('files', dict())) > 0:
+            tool_response = {
+                'tool_response': api_response,
+                'updates': {
+                    'layer_registry': self.graph_state.get('layer_registry', []) + [
+                        {
+                            'title': f"SaferBuildings Output",
+                            'description': f"SaferBuildings output file with flooded buildings from this inputs: ({', '.join([f'{k}: {v}' for k,v in kwargs.items() if k!='out'])})",
+                            'src': api_response['message']['body']['result']['s3_uri'],
+                            'type': 'vector',
+                            'metadata': dict()
+                        }
+                    ]
+                    if not GraphStates.src_layer_exists(self.graph_state, api_response['message']['body']['result']['s3_uri'])
+                    else []
+                }
+            }
+            
+        # DOC: If the API call is successful but the response is not as expected, return an error response
+        else:
+            tool_response = {
+                'tool_response': {
+                    'error': f"Unexpected response from Safer Buildings API: {api_response}"
+                }
+            }
+            
+        # DOC: If there is an error in the tool response, update the messages to guide agent's next steps
+        if 'error' in tool_response['tool_response']:
+            tool_response['updates'] = {
+                'messages': [ SystemMessage(content="An error occurred while executing the Safer Buildings tool. Explain the error to the user and then ask him if he wants to retry or not.") ],
+            }
         
         return tool_response
         
