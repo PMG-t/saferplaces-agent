@@ -352,6 +352,7 @@ class SaferBuildingsTool(BaseAgentTool):
         # print(f"Response status code: {response.status_code} - {response.content}")
         # response = response.json() 
         # TODO: Check output_code ...
+        # TODO: Check if the response is valid
         
         # TEST: Simulate a response for testing purposes
         api_response = {
@@ -384,8 +385,6 @@ class SaferBuildingsTool(BaseAgentTool):
                 else []
             }
         }
-        
-        # TODO: Check if the response is valid
         
         # tool_response = {
         #     'saferbuildings_response': api_response['message']['body']['result'],

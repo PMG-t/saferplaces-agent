@@ -74,8 +74,16 @@ def chatbot_update_messages(state: BaseGraphState):
     messages = state.get("node_params", dict()).get(N.CHATBOT_UPDATE_MESSAGES, dict()).get("update_messages", [])
     return {'messages': messages, 'node_params': {N.CHATBOT_UPDATE_MESSAGES: { 'update_messages': None }}}
 
-
-def chatbot(state: BaseGraphState) -> Command[Literal[END, N.CHATBOT_UPDATE_MESSAGES, N.DEMO_SUBGRAPH, N.CREATE_PROJECT_SUBGRAPH, N.FLOODING_RAINFALL_SUBGRAPH, N.SAFERPLACES_API_SUBGRAPH, N.SAFERCAST_API_SUBGRAPH]]:     # type: ignore
+_chatbot_ending_edges = Literal[
+    END,
+    N.CHATBOT_UPDATE_MESSAGES, 
+    # N.DEMO_SUBGRAPH, 
+    # N.CREATE_PROJECT_SUBGRAPH, 
+    # N.FLOODING_RAINFALL_SUBGRAPH, 
+    N.SAFERPLACES_API_SUBGRAPH, 
+    N.SAFERCAST_API_SUBGRAPH
+]
+def chatbot(state: BaseGraphState) -> Command[_chatbot_ending_edges]:     # type: ignore
     state["messages"] = state.get("messages", [])
 
     if len(state["messages"]) > 0:
