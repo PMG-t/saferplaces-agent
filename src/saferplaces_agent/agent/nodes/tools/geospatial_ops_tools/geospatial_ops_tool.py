@@ -130,7 +130,7 @@ class GeospatialOpsTool(BaseAgentTool):
 
     def _set_args_inference_rules(self) -> dict:
         infer_rules = {
-            'output_file': lambda **kwargs: f"{s3}/{kwargs['output_file']}" if kwargs.get('output_file', None) is not None else None,
+            'output_file': lambda **kwargs: f"{s3_utils._BASE_BUCKET}/{kwargs['output_file']}" if kwargs.get('output_file', None) is not None else None,
         }
         return infer_rules
 
