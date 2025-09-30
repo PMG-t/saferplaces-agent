@@ -3,7 +3,7 @@ name = "saferplaces-agent"
 version = "0.0.3"
 description = "Starter template for making a new agent LangGraph."
 authors = [
-    { name = "William Fu-Hinthorn", email = "13333726+hinthornw@users.noreply.github.com" },
+    { name = "Tommaso Redaelli", email = "tommaso.redaelli@gecosistema.com" },
 ]
 readme = "README.md"
 license = { text = "MIT" }

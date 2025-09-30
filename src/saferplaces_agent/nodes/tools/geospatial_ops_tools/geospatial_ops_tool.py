@@ -146,7 +146,7 @@ class GeospatialOpsTool(BaseAgentTool):
             output = utils.ask_llm(
                 role='system',
                 message=[
-                    GraphStates.build_layer_registry_system_message(self.graph_state),
+                    GraphStates.build_layer_registry_system_message(self.graph_state.get('layer_registry', [])),
                     SystemMessage(content=f"""
 You are a Python code generator specialized in geospatial operations.
 

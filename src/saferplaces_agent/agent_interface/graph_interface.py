@@ -12,6 +12,7 @@ from langchain_core.load import load as lc_load
 
 from ..graph import graph
 from ..common import s3_utils, utils
+from ..common import states as GraphStates
 from .chat_handler import ChatHandler
 
 from IPython.display import display, Markdown
@@ -59,7 +60,7 @@ class GraphInterface:
         restored_layer_registry = restore_layer_registry()
         _ = list( self.G.stream(
             input = { 
-                'messages': [ self.build_layer_registry_system_message(restored_layer_registry) ],
+                'messages': [ GraphStates.build_layer_registry_system_message(restored_layer_registry) ],
                 'layer_registry': restored_layer_registry
             }, 
             config = self.config, stream_mode = 'updates'
@@ -113,63 +114,6 @@ class GraphInterface:
         agent_interrupt_message = { 'interrupt': interrupt_data }
         return agent_interrupt_message
     
-    def build_layer_registry_system_message(self, layer_registry):
-        # !!!: This is kinda duplicate function (see agent.common.states.build_layer_registry_system_message())
-        """
-        Generate a system message dynamically from a list of layer dictionaries.
-        
-        Args:
-            layer_registry (list[dict]): List of layers where each layer has at least:
-                - title (str)
-                - type (str) -> "raster" or "vector"
-                - src (str)
-                - description (optional)
-                - metadata (optional dict)
-                
-        Returns:
-            str: A formatted system message ready to be injected before the user prompt.
-        """
-        lines = []
-        lines.append("[LAYER REGISTRY]")
-        # INFO: [CONTEXT ONLY — DO NOT ACT] could enforce the agent to not run any tool calls that are not explicitly requested by the user.
-        # lines.append("[CONTEXT ONLY — DO NOT ACT]")
-        # lines.append("This message lists available geospatial layers for reference.")
-        # lines.append("It is **read-only context** and **NOT** an instruction to run any tool.")
-        # lines.append("- Do **NOT** invoke tools, create new layers, or fetch data based on this message alone.")
-        # lines.append("- Take actions **only** if the user's **latest message** explicitly asks for them.")
-        # # lines.append("- Do **NOT** initialize DigitalTwinTool (or similar) unless the user asks to build/create/generate a digital twin.")
-        # lines.append("- If uncertain, ask a brief clarification.")
-        # lines.append("[/CONTEXT ONLY — DO NOT ACT]\n")
-        lines.append("The following geospatial layers are currently available in the project.")
-        lines.append("Each layer has a `title` that should be referenced in conversations or tool calls "
-                    "when you need to use it. "
-                    "If the user refers to an existing dataset, check this registry to see if the dataset "
-                    "already exists before creating new data.\n")
-        lines.append("Layers:")
-        for idx, layer in enumerate(layer_registry, start=1):
-            lines.append(f"{idx}.")
-            lines.append(f"  - title: \"{layer.get('title', utils.juststem(layer['src']))}\"")
-            lines.append(f"  - type: {layer['type']}")
-            if 'description' in layer and layer['description']:
-                lines.append(f"  - description: {layer['description']}")
-            lines.append(f"  - src: {layer['src']}")
-
-            # Metadata, if present
-            if 'metadata' in layer and layer['metadata']:
-                lines.append("  - metadata:")
-                # Pretty print nested metadata with indentation
-                meta_json = json.dumps(layer['metadata'], indent=4)
-                lines.append(indent(meta_json, prefix="      "))
-
-        lines.append("\nInstructions:")
-        lines.append("- When a user request can be satisfied by using one of these layers, prefer re-using the layer instead of creating a new one.")
-        lines.append("- Always refer to the `title` when mentioning or selecting a layer in your tool arguments.")
-        lines.append("- If the type is 'vector', assume it contains geographic features like polygons, lines, or points.")
-        lines.append("- If the type is 'raster', assume it contains gridded geospatial data.")
-        lines.append("[/LAYER REGISTRY]")
-        
-        return SystemMessage(content="\n".join(lines))
-    
     
     def update_events(self, new_events: AnyMessage | Interrupt | list[AnyMessage | Interrupt]):
         """Update the chat events with new events."""
@@ -182,16 +126,16 @@ class GraphInterface:
             
     def on_end_event(self, event_value):
             
-            def update_layer_registry(event_value):
-                if type(event_value) is dict and event_value.get('layer_registry'):
-                    layer_registry = self.get_state('layer_registry')
-                    lr_uri = f'{s3_utils._BASE_BUCKET}/layer_registry.json'
-                    lr_fp = os.path.join(os.getcwd(), f'{self.user_id}__{self.project_id}__layer_registry.json')
-                    with open(lr_fp, 'w') as f:
-                        json.dump(layer_registry, f, indent=4)
-                    _ = s3_utils.s3_upload(filename=lr_fp, uri=lr_uri, remove_src= True )
-                    
-            update_layer_registry(event_value)
+        def update_layer_registry(event_value):
+            if type(event_value) is dict and event_value.get('layer_registry'):
+                layer_registry = self.get_state('layer_registry')
+                lr_uri = f'{s3_utils._BASE_BUCKET}/layer_registry.json'
+                lr_fp = os.path.join(os.getcwd(), f'{self.user_id}__{self.project_id}__layer_registry.json')
+                with open(lr_fp, 'w') as f:
+                    json.dump(layer_registry, f, indent=4)
+                _ = s3_utils.s3_upload(filename=lr_fp, uri=lr_uri, remove_src= True )
+                
+        update_layer_registry(event_value)
         
 
     def user_prompt(
@@ -200,32 +144,11 @@ class GraphInterface:
         state_updates: dict = dict(),
     ):
         
-        def prepare_system_messages():
-
-            def build_nowtime_system_message():
-                """
-                Generate a system message with the current time in ISO8601 UTC0 format.
-                
-                Returns:
-                    dict: A system message with the current time and timezone.
-                """
-                nowtime = datetime.datetime.now(tz=datetime.timezone.utc).replace(tzinfo=None).isoformat()
-                lines = []
-                lines.append("[CONTEXT]")
-                lines.append(f"current_time: {nowtime}")
-                lines.append("timezone: UTC0")
-                lines.append("\nInstructions:")
-                lines.append("- Resolve any relative time expressions (e.g., today, yesterday, next N hours) using `current_time`.")
-                lines.append("- If a year is missing, assume the year from `current_time`.")
-                lines.append("- Always output absolute timestamps in ISO8601 UTC0 format without timezone.")
-                lines.append("[/CONTEXT]")
-                
-                return SystemMessage(content="\n".join(lines))
-            
+        def prepare_system_messages():            
             system_messages = []
-            system_messages.append(build_nowtime_system_message())
+            system_messages.append(GraphStates.build_nowtime_system_message())
             if 'layer_registry' in state_updates and state_updates['layer_registry']:
-                system_messages.append(self.build_layer_registry_system_message(state_updates['layer_registry']))
+                system_messages.append(GraphStates.build_layer_registry_system_message(state_updates.get('layer_registry', [])))
             return system_messages
         
         def build_stream():
@@ -255,7 +178,7 @@ class GraphInterface:
             if 'messages' in event_value:
                 event_value['message'] = event_value['messages'][-1].to_json()
                 del event_value['messages']
-                self.update_events(lc_load(event_value['message']))
+                self.update_events(lc_load(event_value['message']))     # !!!: json-message to obj-message → lc_load is in BETA mode, so may not work in future versions
                 
             elif self._event_value_is_interrupt(event_value):
                 self.interrupt = self._event_value2interrupt(event_value)
@@ -281,21 +204,10 @@ class GraphInterface:
         
         
     def chat_markdown(self, user_prompt: str, display_output: bool = True):
-        # for e in self.user_prompt(
-        #     prompt = user_prompt,
-        #     state_updates = {
-        #         'avaliable_tools': []
-        #     }
-        # ):
-        #     if display_output:
-        #         display(Markdown(self.chat_handler.chat_to_markdown(chat=e, include_header=False)))
-        #     else:
-        #         yield Markdown(self.chat_handler.chat_to_markdown(chat=e, include_header=False))
         gen = (
             Markdown(self.chat_handler.chat_to_markdown(chat=e, include_header=False))
             for e in self.user_prompt(prompt=user_prompt, state_updates={'avaliable_tools': []})
         )
-
         if display_output:
             for md in gen:
                 display(md)

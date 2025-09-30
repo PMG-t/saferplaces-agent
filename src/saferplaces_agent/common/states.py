@@ -32,12 +32,34 @@ class BaseGraphState(MessagesState):
     project_id: str = None    
 
 
+
+def build_nowtime_system_message():
+    """
+    Generate a system message with the current time in ISO8601 UTC0 format.
+    
+    Returns:
+        dict: A system message with the current time and timezone.
+    """
+    nowtime = datetime.datetime.now(tz=datetime.timezone.utc).replace(tzinfo=None).isoformat()
+    lines = []
+    lines.append("[CONTEXT]")
+    lines.append(f"current_time: {nowtime}")
+    lines.append("timezone: UTC0")
+    lines.append("\nInstructions:")
+    lines.append("- Resolve any relative time expressions (e.g., today, yesterday, next N hours) using `current_time`.")
+    lines.append("- If a year is missing, assume the year from `current_time`.")
+    lines.append("- Always output absolute timestamps in ISO8601 UTC0 format without timezone.")
+    lines.append("[/CONTEXT]")
+    
+    return SystemMessage(content="\n".join(lines))
+
+
 def src_layer_exists(graph_state: BaseGraphState, layer_src: str) -> bool:
     """Check if the layer exists in the graph state."""
     return any(layer.get('src') == layer_src for layer in graph_state.get('layer_registry', []))
 
 
-def build_layer_registry_system_message(graph_state: BaseGraphState) -> SystemMessage:
+def build_layer_registry_system_message(layer_registry: list) -> SystemMessage:
     """
     Generate a system message dynamically from a list of layer dictionaries.
     
@@ -53,7 +75,6 @@ def build_layer_registry_system_message(graph_state: BaseGraphState) -> SystemMe
         str: A formatted system message ready to be injected before the user prompt.
     """
 
-    layer_registry = graph_state.get('layer_registry', [])
     if not layer_registry:
         return {
             'role': 'system',
