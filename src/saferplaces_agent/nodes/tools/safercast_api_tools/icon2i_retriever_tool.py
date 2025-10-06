@@ -7,6 +7,7 @@ import requests
 from typing import Optional, Union, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, AliasChoices, field_validator, model_validator
 
+from langchain_core.messages import SystemMessage
 from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
     CallbackManagerForToolRun,
@@ -262,6 +263,12 @@ class ICON2IRetrieverTool(BaseAgentTool):
             else:
                 time_end = datetime.datetime.fromisoformat(time_end).replace(tzinfo=None)
             return time_end.isoformat()
+        
+        def infer_bucket_source(**kwargs):
+            """
+            Infer the S3 bucket source based on user ID and project ID.
+            """
+            return kwargs.get('bucket_source', infer_bucket_destination(**kwargs))
 
         def infer_bucket_destination(**kwargs):
             """
@@ -273,6 +280,7 @@ class ICON2IRetrieverTool(BaseAgentTool):
             'time_range': infer_time_range,
             'time_start': infer_time_start,
             'time_end': infer_time_end,
+            'bucket_source': infer_bucket_source,
             'bucket_destination': infer_bucket_destination,
         }
         return infer_rules
@@ -287,58 +295,78 @@ class ICON2IRetrieverTool(BaseAgentTool):
         # DOC: Call the SaferBuildings API ...
         api_url = f"{os.getenv('SAFERCAST_API_ROOT', 'http://localhost:5002')}/processes/icon2i-retriever-process/execution"
         
-        def build_input_payload():
-            inputs = {
-                "token": os.getenv("SAFERCAST_API_TOKEN"),
-
-                'lat_range': kwargs['bbox'].lat_range(),
-                'long_range': kwargs['bbox'].long_range(),
-                'time_range': [
-                    datetime.datetime.fromisoformat(kwargs['time_start']).replace(tzinfo=None).isoformat(),
-                    datetime.datetime.fromisoformat(kwargs['time_end']).replace(tzinfo=None).isoformat(),
-                ],
-
-                'variable': kwargs['variable'],
-
-                'bucket_destination': kwargs['bucket_destination'],
-                
-                'debug': kwargs.get('debug', True),
-            }
-            return inputs
+        kwargs = {
+            'variable': kwargs['variable'],
+            'lat_range': kwargs['bbox'].lat_range(),
+            'long_range': kwargs['bbox'].long_range(),
+            'time_range': [
+                datetime.datetime.fromisoformat(kwargs['time_start']).replace(tzinfo=None).isoformat(),
+                datetime.datetime.fromisoformat(kwargs['time_end']).replace(tzinfo=None).isoformat(),
+            ],
+            'bucket_source': kwargs['bucket_destination'],
+            'bucket_destination': kwargs['bucket_destination']
+        }
         
-        payload = { 'inputs': build_input_payload() }
-
-        print(f"Executing {self.name} with args: {payload}")
-        response = requests.post(api_url, json=payload)
-        print(f"Response status code: {response.status_code} - {response.content}")
-        response = response.json() 
-        # TODO: Check output_code ...
-        # TODO: Check if the response is valid
-
-        # TEST: Simulate a response for testing purposes
-        # api_response = {}
-        api_response = response
+        credentials_args = {
+            'token': os.getenv("SAFERCAST_API_TOKEN"),
+        }
         
-        tool_response = {
-            'tool_response': api_response,
-            'updates': {
-                'layer_registry': self.graph_state.get('layer_registry', []) + [
-                    {
-                        'title': f"ICON2I_{payload['inputs']['variable']}",
-                        'description': f"ICON2I {payload['inputs']['variable']} data for bbox {kwargs['bbox']} from {payload['inputs']['time_range'][0]} to {payload['inputs']['time_range'][1]}",
-                        'src': api_response['uri'],
-                        'type': 'raster',
-                        'metadata': dict()  # TODO: To be well defined (maybe class)
-                    }
-                ]
-                if not GraphStates.src_layer_exists(self.graph_state, api_response['uri'])
-                else []
+        debug_args = {
+            'debug': kwargs.get('debug', True),     # TODO: use a global _is_debug_mode() to set this
+        }
+        
+        payload = {
+            'inputs': {
+                **kwargs,                   # DOC: Unpack the tool arguments
+                **credentials_args,         # DOC: Add credentials
+                **debug_args                # DOC: Add debug mode
             }
         }
         
-        print('\n', '-'*80, '\n')
-        print('tool_response:', tool_response)
-        print('\n', '-'*80, '\n')
+        # DOC: Call the DPC-Retriever API
+        api_response = requests.post(api_url, json=payload)
+        
+        # DOC: If the api call fails, return an error response
+        if api_response.status_code != 200:
+            tool_response = {
+                'tool_response': {
+                    'error': f"Failed to execute ICON2I Retriever API: {api_response.status_code} - {api_response.text}"
+                }
+            }
+            
+        # DOC: If the API call is successful, process the response 
+        api_response = api_response.json()
+        if 'uri' in api_response:
+            tool_response = {
+                'tool_response': api_response,
+                'updates': {
+                    'layer_registry': self.graph_state.get('layer_registry', []) + [
+                        {
+                            'title': f"ICON2I_{payload['inputs']['variable']}",
+                            'description': f"ICON2I {payload['inputs']['variable']} data for bbox {kwargs['bbox']} from {payload['inputs']['time_range'][0]} to {payload['inputs']['time_range'][1]}",
+                            'src': api_response['uri'],
+                            'type': 'raster',
+                            'metadata': dict()  # TODO: To be well defined (maybe class)
+                        }
+                    ]
+                    if not GraphStates.src_layer_exists(self.graph_state, api_response['uri'])
+                    else []
+                }
+            }    
+            
+        # DOC: If the API call is successful but the response is not as expected, return an error response
+        else:
+            tool_response = {
+                'tool_response': {
+                    'error': f"Unexpected response from ICON2I Retriever API: {api_response}"
+                }
+            }
+            
+        # DOC: If there is an error in the tool response, update the messages to guide agent's next steps
+        if 'error' in tool_response['tool_response']:
+            tool_response['updates'] = {
+                'messages': [ SystemMessage(content="An error occurred while executing the ICON2I Retriever tool. Explain the error to the user and then ask him if he wants to retry or not.") ],
+            }
         
         return tool_response
 

@@ -7,6 +7,7 @@ import requests
 from typing import Optional, Union, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, AliasChoices, field_validator, model_validator
 
+from langchain_core.messages import SystemMessage
 from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
     CallbackManagerForToolRun,
@@ -40,6 +41,9 @@ DPCProductCode = Literal[
     "RADAR_STATUS", # Radar site status (ON/OFF)
     "CAPPI1", "CAPPI2", "CAPPI3", "CAPPI4", "CAPPI5", "CAPPI6", "CAPPI7", "CAPPI8"  # CAPPI reflectivity at fixed altitude (1–8 km) – ~10min
 ]
+DPCProductCodeValues = list(DPCProductCode.__args__)
+
+DPCBoundingBox = {'west': 4.5233915, 'south': 35.0650858, 'east': 20.4766085, 'north': 47.8489892}  # DOC: DPC data bbox → (west, south, east, north) for Italy in EPSG:4326
 
 
 # ---- Main schema ----
@@ -86,7 +90,7 @@ class DPCRetrieverSchema(BaseModel):
     bbox: Optional[base_models.BBox] = Field(
         default=None,
         title="Bounding Box",
-        description="Geographic extent in EPSG:4326 with named keys: west, south, east, north.",
+        description=f"Geographic extent in EPSG:4326 with named keys: west, south, east, north. Full coverage (Italy) is given by {DPCBoundingBox}.",
         examples=[{"west": 10.0, "south": 44.0, "east": 12.0, "north": 46.0}],
     )
 
@@ -254,8 +258,32 @@ class DPCRetrieverTool(BaseAgentTool):
 
     # DOC: Validation rules ( i.e.: valid init and lead time ... ) 
     def _set_args_validation_rules(self) -> dict:
-        # TODO: | Validate time range according dpc API docs | check product validity
-        return dict()
+        return {
+            'product': [
+                lambda **ka: f"Invalid product name: {ka['product']}. It should be one of [{', '.join(DPCProductCodeValues)}]."
+                    if ka['product'] not in DPCProductCodeValues else None
+            ],
+            'bbox': [
+                lambda **ka: f"Invalid bbox: {ka['bbox']}. It should be inside the DPC bounding box {DPCBoundingBox}."
+                    if ka['bbox'].west < DPCBoundingBox['west'] or ka['bbox'].south < DPCBoundingBox['south'] or
+                       ka['bbox'].east > DPCBoundingBox['east'] or ka['bbox'].north > DPCBoundingBox['north'] 
+                       else None,
+            ],            
+            'time_start': [
+                lambda **ka: f"Invalid time_start: {ka['time_start']}. It should be inside last 7 days."
+                    if ka['time_start'] and datetime.datetime.fromisoformat(ka['time_start']).replace(tzinfo=timezone.utc) < (datetime.datetime.now(tz=timezone.utc) - datetime.timedelta(days=7)) else None,
+                lambda **ka: f"Invalid time_start: {ka['time_start']}. It should be before current time."
+                    if ka['time_start'] and datetime.datetime.fromisoformat(ka['time_start']).replace(tzinfo=timezone.utc) > datetime.datetime.now(tz=timezone.utc) else None,
+            ],
+            'time_end': [
+                lambda **ka: f"Invalid time_end: {ka['time_end']}. It should be inside last 7 days."
+                    if ka['time_end'] and datetime.datetime.fromisoformat(ka['time_end']).replace(tzinfo=timezone.utc) < (datetime.datetime.now(tz=timezone.utc) - datetime.timedelta(days=7)) else None,
+                lambda **ka: f"Invalid time_end: {ka['time_end']}. It should be after time_start."
+                    if ka['time_start'] and ka['time_end'] and datetime.datetime.fromisoformat(ka['time_end']).replace(tzinfo=timezone.utc) <= datetime.datetime.fromisoformat(ka['time_start']).replace(tzinfo=timezone.utc) else None,
+                lambda **ka: f"Invalid time_end: {ka['time_end']}. It should be before current time."
+                    if ka['time_end'] and datetime.datetime.fromisoformat(ka['time_end']).replace(tzinfo=timezone.utc) > datetime.datetime.now(tz=timezone.utc) else None,
+            ],
+        }
     
 
     # DOC: Inference rules ( i.e.: from location name to bbox ... )
@@ -329,61 +357,77 @@ class DPCRetrieverTool(BaseAgentTool):
         # DOC: Call the SaferBuildings API ...
         api_url = f"{os.getenv('SAFERCAST_API_ROOT', 'http://localhost:5002')}/processes/dpc-retriever-process/execution"
         
+        kwargs = {
+            'product': kwargs['product'],
+            'lat_range': kwargs['bbox'].lat_range(),
+            'long_range': kwargs['bbox'].long_range(),
+            'time_range': [
+                datetime.datetime.fromisoformat(kwargs['time_start']).replace(tzinfo=None).isoformat(),
+                datetime.datetime.fromisoformat(kwargs['time_end']).replace(tzinfo=None).isoformat(),
+            ],
+            'bucket_destination': kwargs['bucket_destination']
+        }
         
-        def build_input_payload():
-            inputs = {
-                "token": os.getenv("SAFERCAST_API_TOKEN"),
-
-                'lat_range': kwargs['bbox'].lat_range(),
-                'long_range': kwargs['bbox'].long_range(),
-                'time_range': [
-                    datetime.datetime.fromisoformat(kwargs['time_start']).replace(tzinfo=None).isoformat(),
-                    datetime.datetime.fromisoformat(kwargs['time_end']).replace(tzinfo=None).isoformat(),
-                ],
-
-                'product': kwargs['product'],
-                'bucket_destination': kwargs['bucket_destination'],
-                
-                'debug': kwargs.get('debug', True),
-            }
-            return inputs
+        credentials_args = {
+            'token': os.getenv("SAFERCAST_API_TOKEN"),
+        }
         
-        payload = { 'inputs': build_input_payload() }
+        debug_args = {
+            'debug': kwargs.get('debug', True),     # TODO: use a global _is_debug_mode() to set this
+        }
         
-        print(f"Executing {self.name} with args: {payload}")
-        response = requests.post(api_url, json=payload)
-        print(f"Response status code: {response.status_code} - {response.content}")
-        
-        response = response.json() 
-        # TODO: Check output_code ...
-
-        # TEST: Simulate a response for testing purposes
-        # api_response = {}
-        api_response = response
-
-        # TODO: Check if the response is valid
-        
-        
-        tool_response = {
-            'tool_response': api_response,
-            'updates': {
-                'layer_registry': self.graph_state.get('layer_registry', []) + [
-                    {
-                        'title': f"DPC_{payload['inputs']['product']}",
-                        'description': f"DPC {payload['inputs']['product']} data for bbox {kwargs['bbox']} from {payload['inputs']['time_range'][0]} to {payload['inputs']['time_range'][1]}",
-                        'src': api_response['uri'],
-                        'type': 'raster',
-                        'metadata': dict()  # TODO: To be well defined (maybe class)
-                    }
-                ]
-                if not GraphStates.src_layer_exists(self.graph_state, api_response['uri'])
-                else []
+        payload = {
+            'inputs': {
+                **kwargs,                   # DOC: Unpack the tool arguments
+                **credentials_args,         # DOC: Add credentials
+                **debug_args                # DOC: Add debug mode
             }
         }
         
-        print('\n', '-'*80, '\n')
-        print('tool_response:', tool_response)
-        print('\n', '-'*80, '\n')
+        # DOC: Call the DPC-Retriever API
+        api_response = requests.post(api_url, json=payload)
+        
+        # DOC: If the api call fails, return an error response
+        if api_response.status_code != 200:
+            tool_response = {
+                'tool_response': {
+                    'error': f"Failed to execute DPC Retriever API: {api_response.status_code} - {api_response.text}"
+                }
+            }
+            
+        # DOC: If the API call is successful, process the response 
+        api_response = api_response.json()
+        if 'uri' in api_response:
+            tool_response = {
+                'tool_response': api_response,
+                'updates': {
+                    'layer_registry': self.graph_state.get('layer_registry', []) + [
+                        {
+                            'title': f"DPC_{payload['inputs']['product']}",
+                            'description': f"DPC {payload['inputs']['product']} data for bbox {kwargs['bbox']} from {payload['inputs']['time_range'][0]} to {payload['inputs']['time_range'][1]}",
+                            'src': api_response['uri'],
+                            'type': 'raster',
+                            'metadata': dict()  # TODO: To be well defined (maybe class)
+                        }
+                    ]
+                    if not GraphStates.src_layer_exists(self.graph_state, api_response['uri'])
+                    else []
+                }
+            }    
+            
+        # DOC: If the API call is successful but the response is not as expected, return an error response
+        else:
+            tool_response = {
+                'tool_response': {
+                    'error': f"Unexpected response from DPC Retriever API: {api_response}"
+                }
+            }
+            
+        # DOC: If there is an error in the tool response, update the messages to guide agent's next steps
+        if 'error' in tool_response['tool_response']:
+            tool_response['updates'] = {
+                'messages': [ SystemMessage(content="An error occurred while executing the DPC Retriever tool. Explain the error to the user and then ask him if he wants to retry or not.") ],
+            }
         
         return tool_response
 

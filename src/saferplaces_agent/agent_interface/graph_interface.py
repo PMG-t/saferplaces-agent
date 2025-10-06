@@ -178,7 +178,7 @@ class GraphInterface:
             if 'messages' in event_value:
                 event_value['message'] = event_value['messages'][-1].to_json()
                 del event_value['messages']
-                self.update_events(lc_load(event_value['message']))     # !!!: json-message to obj-message → lc_load is in BETA mode, so may not work in future versions
+                self.update_events(lc_load(event_value['message']))     # !!!: json-message to obj-message → LangChainBetaWarning: The function `load` is in beta. It is actively being worked on, so the API may change.
                 
             elif self._event_value_is_interrupt(event_value):
                 self.interrupt = self._event_value2interrupt(event_value)
