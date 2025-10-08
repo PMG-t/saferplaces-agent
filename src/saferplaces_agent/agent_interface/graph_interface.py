@@ -86,8 +86,7 @@ class ConversationHandler:
             return {
                 "role": "interrupt",
                 "content": msg.value['content'],
-                "interrupt_type": msg.value['interrupt_type'],
-                "ns": msg.ns
+                "interrupt_type": msg.value['interrupt_type']
             }
             
         message_type_map = {
@@ -264,7 +263,7 @@ class GraphInterface:
         def build_stream():
             stream_obj = dict()
             if self.interrupt is not None:
-                self.update_events(HumanMessage(content=prompt, resume_interrupt={ 'interrupt_type': self.interrupt.value['interrupt_type'], 'ns': self.interrupt.ns }))
+                self.update_events(HumanMessage(content=prompt, resume_interrupt={ 'interrupt_type': self.interrupt.value['interrupt_type'] }))
                 self.interrupt = None
                 stream_obj = Command(resume={'response': prompt})
             else:

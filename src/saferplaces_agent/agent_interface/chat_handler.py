@@ -160,9 +160,6 @@ class ChatMarkdownHandler:
                 itype = msg.get("interrupt_type") or msg.get("interrupt", {}).get("type")
                 if itype:
                     extras.append(f"**Tipo:** `{itype}`")
-                ns = msg.get("ns")
-                if ns:
-                    extras.append(f"**Namespaces:** {_fence(_pretty(ns), 'json')}")
             if role == "user" and msg.get("resume_interrupt"):
                 extras.append("**Ripresa interrupt:**")
                 extras.append(_fence(_pretty(msg["resume_interrupt"]), "json"))

@@ -1,6 +1,6 @@
 [project]
 name = "saferplaces-agent"
-version = "0.0.5"
+version = "0.0.7"
 description = "Starter template for making a new agent LangGraph."
 authors = [
     { name = "Tommaso Redaelli", email = "tommaso.redaelli@gecosistema.com" },
