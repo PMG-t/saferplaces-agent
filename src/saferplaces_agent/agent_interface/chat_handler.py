@@ -1,98 +1,44 @@
 from __future__ import annotations
-import json
 import ast
+import uuid
+import json
+import html
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from langgraph.types import Command, Interrupt
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage, AnyMessage
 
+from IPython.display import display, Markdown, clear_output
 
-class ChatHandler:
+from ..common import s3_utils, utils
+from .graph_interface import GraphInterface
+
+from . import __GRAPH_REGISTRY__
+
+class ChatMarkdownHandler:
     
-    title = None
-    subtitle = None
-    events: list[AnyMessage | Interrupt] = []
-    new_events: list[AnyMessage | Interrupt] = []
-    
-    def __init__(self, chat_id=None, title=None, subtitle=None):
-        self.chat_id = chat_id
-        self.title = title
-        self.subtitle = subtitle
-        
-    def add_events(self, event: AnyMessage | Interrupt | list[AnyMessage | Interrupt]):
-        if isinstance(event, list):
-            self.events.extend(event)
-            self.new_events.extend(event)
+    def __init__(self, graph_interface: GraphInterface = None, thread_id: str = None, user_id: str = None, **gi_kwargs):
+        """
+        Initialize the ChatMarkdownHandler with a GraphInterface instance.
+        """
+        if graph_interface is None:
+            if thread_id is None or user_id is None:
+                thread_id = thread_id or str(uuid.uuid4())
+                user_id = user_id or "default_user"
+                gi_kwargs['project_id'] = gi_kwargs.get('project_id', f"project-{str(uuid.uuid4())}")
+                self.graph_interface = __GRAPH_REGISTRY__.register(
+                    thread_id=thread_id,
+                    user_id=user_id,
+                    **gi_kwargs
+                )
+                print(f"No GraphInterface provided, created a new default one with thread_id={thread_id}, user_id={user_id}, project_id={gi_kwargs['project_id']}")
+            else:
+                self.graph_interface = __GRAPH_REGISTRY__.register(thread_id=thread_id, user_id=user_id, **gi_kwargs)
         else:
-            self.events.append(event)
-            self.new_events.append(event)
+            self.graph_interface = graph_interface
         
-
-    @property
-    def get_new_events(self):
-        """Returns the new events and clears the list."""
-        new_events = self.new_events.copy()
-        self.new_events.clear()
-        return new_events
-    
-    
-    def chat2json(self, chat: list[AnyMessage | Interrupt] | None = None) -> list[dict]:
-        """
-        Convert a chat to a JSON string.
-        """
-    
-        if chat is None:
-            chat = self.events
-    
-        def human_message_to_dict(msg: HumanMessage) -> dict:
-            return {
-                "role": "user",
-                "content": msg.content,
-                "resume_interrupt": msg.resume_interrupt if hasattr(msg, 'resume_interrupt') else None,
-            }
         
-        def ai_message_to_dict(msg: AIMessage) -> dict:
-            return {
-                "role": "ai",
-                "content": msg.content,
-                "tool_calls": msg.tool_calls if msg.tool_calls else [],
-            }
-            
-        def tool_message_to_dict(msg: ToolMessage) -> dict:
-            return {
-                "role": "tool",
-                "content": msg.content,
-                "name": msg.name,
-                "id": msg.id,
-                "tool_call_id": msg.tool_call_id
-            }
-            
-        def interrupt_to_dict(msg: Interrupt) -> dict:
-            return {
-                "role": "interrupt",
-                "content": msg.value['content'],
-                "interrupt_type": msg.value['interrupt_type'],
-                "resumable": msg.resumable,
-                "ns": msg.ns
-            }
-            
-        message_type_map = {
-            HumanMessage: human_message_to_dict,
-            AIMessage: ai_message_to_dict,
-            ToolMessage: tool_message_to_dict,
-            Interrupt: interrupt_to_dict
-        }
-        
-        chat_dict = [
-            message_type_map[type(msg)](msg)
-            for msg in chat 
-            if type(msg) in message_type_map
-        ]
-        
-        return chat_dict
-    
-    
     def chat_to_markdown(
         self,
         chat: List[AnyMessage | Interrupt] | None = None,
@@ -113,13 +59,12 @@ class ChatHandler:
         
         if chat is None:
             chat = self.events
-        chat = self.chat2json(chat)
+        chat = self.graph_interface.conversation_handler.chat2json(chat)
         if not chat:
             return None
-        # if path is None:
-        #     path = f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+        
         if title is None:
-            title = self.title if self.title else f"Chat Markdown {datetime.now().isoformat()}"
+            title = self.graph_interface.conversation_handler.title if self.graph_interface.conversation_handler.title else f"Chat Markdown {datetime.now().isoformat()}"
                     
         
         ROLE_META = {
@@ -298,3 +243,221 @@ class ChatHandler:
                 f.write(markdown)
 
         return markdown
+    
+
+    def layers_to_markdown(self, layers: List[Dict[str, Any]]) -> str:
+        """
+        Prende in input una lista di dict (layer geospaziali) e restituisce
+        una stringa Markdown compatta, con metadati espandibili via <details>.
+        Pensata per l'uso con: display(Markdown(layers_to_markdown(layers))).
+        """
+        def esc(x: Any) -> str:
+            # Escape per contenuto HTML/Markdown incluso in tag HTML
+            return html.escape(str(x), quote=True)
+
+        lines = []
+        for i, layer in enumerate(layers, 1):
+            title = esc(layer.get("title", ""))
+            desc = esc(layer.get("description", ""))
+            src = esc(layer.get("src", ""))
+            ltype = esc(layer.get("type", ""))
+
+            lines.append(f"**{title}** — _{desc}_ — `{ltype}`")
+            if src:
+                url_link = utils.s3uri_to_https(src) if src.startswith("s3://") else src
+                lines.append(f"- src: [{src}]({url_link})")
+                
+            md = layer.get("metadata", {})
+            if isinstance(md, dict) and md:
+                items = "".join(f"<li><code>{esc(k)}</code>: <code>{esc(v)}</code></li>" for k, v in md.items())
+                lines.append(
+                    "- <details><summary>metadata</summary>"
+                    f"<ul>{items}</ul>"
+                    "</details>"
+                )
+            lines.append("")
+
+        return "\n".join(lines)
+    
+            
+    class ChatMarkdownBreak(StopIteration):
+        """Custom exception to stop the chat markdown generator."""
+        def __init__(self, message="Chat markdown generation stopped."):
+            super().__init__(message)
+            
+    class ChatMarkdownContinue(Exception):
+        """Custom exception to continue the chat markdown generator."""
+        def __init__(self, message="Chat markdown generation continued."):
+            super().__init__(message)
+            
+    class ChatMarkdownCommand():
+        NEW_CHAT = 'new-chat'
+        RESET = 'reset'
+        LAYERS = 'layers'
+        ADD_LAYER = 'add-layer'
+        CLEAR = 'clear'
+        HISTORY = 'history'
+        MAP = 'map'
+        EXPORT = 'export'
+        EXIT = 'exit'
+        QUIT = 'quit'
+        HELP = 'help'
+        
+    def handle_command(self, command: str):
+        """
+        Handle chat markdown commands based on the command string.
+        Args:
+            command (str): The command string to handle.
+            self.graph_interface_istance (GraphInterface): The GraphInterface instance to use for handling commands.
+        """
+        
+        def command_new_chat():
+            clear_output()
+            new_thread_id = str(uuid.uuid4())
+            print(f"Starting a new chat with thread_id={new_thread_id}.")
+            self.graph_interface = __GRAPH_REGISTRY__.register(
+                thread_id=new_thread_id,
+                user_id=self.graph_interface.user_id,
+                project_id=self.graph_interface.project_id,
+                map_handler=self.graph_interface.map_handler
+            )
+            
+        def command_reset():
+            print("--- TO BE IMPLEMENTED ---")
+        
+        def command_layers():
+            layers = self.graph_interface.get_state('layer_registry')
+            if len(layers) > 0:
+                display(Markdown(self.layers_to_markdown(layers)))
+            else:
+                print("No layers available in the layer registry.")
+                
+        def command_add_layer():
+            src = input("Enter the source URL for the layer (e.g., s3://bucket/path/to/layer.geojson): ")
+            title = input("Enter the title for the layer (just a label): ")
+            description = input("Enter a description for the layer (optional but recommended): ")
+            inferred_layer_type = 'raster' if src.endswith(('.tif', '.tiff')) else 'vector'
+            layer_type = input(f"Enter the layer type (default is '{inferred_layer_type}'): ") or inferred_layer_type
+            
+            if layer_type=='raster':
+                metadata_nodata = input("Enter the nodata value for the raster layer (optional, default is nan): ")
+                try:
+                    metadata_nodata = float(metadata_nodata) if metadata_nodata else 'nan'
+                except ValueError:
+                    metadata_nodata = 'nan'
+                metadata_colormap_name = input("Enter the colormap name for the raster layer (optional, default is 'virids'): ") or 'viridis'
+                metadata = {
+                    "nodata": metadata_nodata,
+                    "colormap_name": metadata_colormap_name
+                }
+            elif layer_type=='vector':
+                metadata = dict()
+            
+            self.graph_interface.register_layer(
+                src=src,
+                title=title,
+                description=description,
+                layer_type=layer_type,
+                metadata=metadata
+            )
+            
+        def command_clear():
+            clear_output()
+            
+        def command_history():
+            chat_events = self.graph_interface.conversation_events
+            if len(chat_events) > 0:
+                clear_output()
+                display(Markdown(self.chat_to_markdown(chat=chat_events, include_header=False)))
+            else:
+                print("No past messages in the conversation.")
+            
+        def command_map():
+            if self.graph_interface.map_handler:
+                display(self.graph_interface.map_handler.m)
+                raise self.ChatMarkdownBreak("Map displayed.")
+            else:
+                print("No map handler available.")
+                
+        def command_export():
+            export_path = input(f"Enter the filename to save the chat markdown file (default is chat_{self.graph_interface.thread_id}.md'): ")
+            export_path = export_path or f"chat_{self.graph_interface.thread_id}.md"
+            title = input("Enter the title for the chat (optional): ") or None
+            self.chat_to_markdown(
+                chat=self.graph_interface.conversation_events,
+                path=export_path,
+                title=title,
+                subtitle="Exported conversation",
+                include_toc=True,
+                include_header=True
+            )
+            export_uri = f"{s3_utils._BASE_BUCKET}/conversations/{self.graph_interface.thread_id}/{export_path}"
+            s3_utils.s3_upload(filename=export_path, uri=export_uri, remove_src=True)
+            export_url = html.escape(utils.s3uri_to_https(export_uri), quote=True)
+            display(Markdown(f"Chat exported to: [{export_uri}]({export_url})"))
+                
+        def command_exit():
+            print("Exiting the conversation.")
+            raise self.ChatMarkdownBreak("Exiting the conversation.")
+        
+        def command_help():
+            commands = [cmd for cmd in dir(self.ChatMarkdownCommand) if not cmd.startswith('_')]
+            help_text = "\n".join([f"/{cmd}: {cmd.replace('_', ' ').capitalize()}" for cmd in commands])
+            print(f"Available commands:\n{help_text}")
+        
+        if command == self.ChatMarkdownCommand.NEW_CHAT:
+            command_new_chat()
+        elif command == self.ChatMarkdownCommand.RESET:
+            command_reset()
+        elif command == self.ChatMarkdownCommand.LAYERS:
+            command_layers()
+        elif command == self.ChatMarkdownCommand.ADD_LAYER:
+            command_add_layer()
+        elif command == self.ChatMarkdownCommand.CLEAR:
+            command_clear()
+        elif command == self.ChatMarkdownCommand.HISTORY:
+            command_history()
+        elif command == self.ChatMarkdownCommand.MAP:
+            command_map()
+        elif command == self.ChatMarkdownCommand.EXPORT:
+            command_export()
+        elif command == self.ChatMarkdownCommand.EXIT or command == self.ChatMarkdownCommand.QUIT:
+            command_exit()
+        elif command == self.ChatMarkdownCommand.HELP:
+            command_help()
+        else:
+            print(f"Unknown command: {command}")
+        
+        raise self.ChatMarkdownContinue("Continuing the conversation after command.")
+    
+    
+    def run(self):
+        def markdown_interaction(user_prompt: str, display_output: bool = True):
+            gen = (
+                Markdown(self.chat_to_markdown(chat=e, include_header=False))
+                for e in self.graph_interface.user_prompt(prompt=user_prompt, state_updates={'avaliable_tools': []})
+            )
+            if display_output:
+                for md in gen:
+                    display(md)
+            else:
+                yield from gen
+        
+        prompt_input = lambda: input("Enter your prompt (type 'exit' to quit conversation): ")
+
+        while True:
+            p = prompt_input()
+            if p.lower() == 'exit':
+                break
+            
+            if p.startswith('/'):
+                command = p[1:].strip()
+                try:
+                    self.handle_command(command)
+                except self.ChatMarkdownBreak:
+                    break
+                except self.ChatMarkdownContinue:
+                    continue
+                    
+            for md in markdown_interaction(p, display_output=True):
+                continue

@@ -14,11 +14,98 @@ from langchain_core.load import load as lc_load
 from ..graph import graph
 from ..common import s3_utils, utils
 from ..common import states as GraphStates
-from .chat_handler import ChatHandler
+# from .chat_handler import ChatHandler
 
 from .leafmap_interface import LeafmapInterface
 
-from IPython.display import display, Markdown, clear_output
+# from IPython.display import display, Markdown, clear_output
+
+
+
+class ConversationHandler:
+    
+    title = None
+    subtitle = None
+    events: list[AnyMessage | Interrupt] = []
+    new_events: list[AnyMessage | Interrupt] = []
+    
+    def __init__(self, chat_id=None, title=None, subtitle=None):
+        self.chat_id = chat_id
+        self.title = title
+        self.subtitle = subtitle
+        
+    def add_events(self, event: AnyMessage | Interrupt | list[AnyMessage | Interrupt]):
+        if isinstance(event, list):
+            self.events.extend(event)
+            self.new_events.extend(event)
+        else:
+            self.events.append(event)
+            self.new_events.append(event)
+        
+
+    @property
+    def get_new_events(self):
+        """Returns the new events and clears the list."""
+        new_events = self.new_events.copy()
+        self.new_events.clear()
+        return new_events
+    
+    
+    def chat2json(self, chat: list[AnyMessage | Interrupt] | None = None) -> list[dict]:
+        """
+        Convert a chat to a JSON string.
+        """
+    
+        if chat is None:
+            chat = self.events
+    
+        def human_message_to_dict(msg: HumanMessage) -> dict:
+            return {
+                "role": "user",
+                "content": msg.content,
+                "resume_interrupt": msg.resume_interrupt if hasattr(msg, 'resume_interrupt') else None,
+            }
+        
+        def ai_message_to_dict(msg: AIMessage) -> dict:
+            return {
+                "role": "ai",
+                "content": msg.content,
+                "tool_calls": msg.tool_calls if msg.tool_calls else [],
+            }
+            
+        def tool_message_to_dict(msg: ToolMessage) -> dict:
+            return {
+                "role": "tool",
+                "content": msg.content,
+                "name": msg.name,
+                "id": msg.id,
+                "tool_call_id": msg.tool_call_id
+            }
+            
+        def interrupt_to_dict(msg: Interrupt) -> dict:
+            return {
+                "role": "interrupt",
+                "content": msg.value['content'],
+                "interrupt_type": msg.value['interrupt_type'],
+                "resumable": msg.resumable,
+                "ns": msg.ns
+            }
+            
+        message_type_map = {
+            HumanMessage: human_message_to_dict,
+            AIMessage: ai_message_to_dict,
+            ToolMessage: tool_message_to_dict,
+            Interrupt: interrupt_to_dict
+        }
+        
+        chat_dict = [
+            message_type_map[type(msg)](msg)
+            for msg in chat 
+            if type(msg) in message_type_map
+        ]
+        
+        return chat_dict
+
 
 class GraphInterface:
 
@@ -38,17 +125,13 @@ class GraphInterface:
 
         self.config = { "configurable": { "thread_id": self.thread_id } }
         
-        self.chat_events = []
-        self.chat_handler = ChatHandler(chat_id=self.thread_id, title=f"Chat {user_id}", subtitle=f"Thread {thread_id}")
+        self.conversation_events = []
+        self.conversation_handler = ConversationHandler(chat_id=self.thread_id, title=f"Chat {user_id}", subtitle=f"Thread {thread_id}")
         
         self.map_handler = LeafmapInterface() if map_handler else None
         
         s3_utils.setup_base_bucket(user_id=self.user_id, project_id=self.project_id)
         self.restore_state()
-            
-        # if self.map_handler:
-        #     clear_output(wait=True)
-        #     display(self.map_handler.m)  # Display the map in the notebook
              
             
     @property
@@ -133,11 +216,11 @@ class GraphInterface:
     def update_events(self, new_events: AnyMessage | Interrupt | list[AnyMessage | Interrupt]):
         """Update the chat events with new events."""
         if isinstance(new_events, list):
-            self.chat_events.extend(new_events)
-            self.chat_handler.add_events(new_events)
+            self.conversation_events.extend(new_events)
+            self.conversation_handler.add_events(new_events)
         else:
-            self.chat_events.append(new_events)
-            self.chat_handler.add_events(new_events)
+            self.conversation_events.append(new_events)
+            self.conversation_handler.add_events(new_events)
             
     def on_end_event(self, event_value):
             
@@ -152,18 +235,15 @@ class GraphInterface:
                 
         def update_map(event_value):
             if self.map_handler and type(event_value) is dict and event_value.get('layer_registry'):
-                display_map = False
+                is_map_updated = False
                 for layer in event_value['layer_registry']:
-                    displayed = self.map_handler.add_layer(
+                    is_layer_added = self.map_handler.add_layer(
                         src=layer['src'],
                         layer_type=layer['type'],
                         colormap_name=layer.get('metadata', {}).get('colormap_name', 'viridis'),
                         nodata=layer.get('metadata', {}).get('nodata', -9999),
                     )
-                    if displayed:
-                        display_map = True
-                # if display_map:
-                #     display(self.map_handler.m)
+                    is_map_updated = is_map_updated or is_layer_added
                 
         update_layer_registry(event_value)
         update_map(event_value)
@@ -219,7 +299,7 @@ class GraphInterface:
             
                      
         stream_prompt = build_stream()
-        yield self.chat_handler.get_new_events
+        yield self.conversation_handler.get_new_events
         
         for event in self.G.stream(
             input = stream_prompt,
@@ -229,154 +309,9 @@ class GraphInterface:
             for event_value in event.values():
                 if event_value is not None:
                     process_event_value(event_value)    
-                    yield self.chat_handler.get_new_events
+                    yield self.conversation_handler.get_new_events
                     
         self.on_end_event(stream_prompt) # ???: maybe it should be called before G.stream()
-        
-    
-    # TODO: this handling will need to be moved in autonomous class 'ChatMarkdown') using GraphInterface    
-    def chat_markdown(self, user_prompt: str, display_output: bool = True):
-        gen = (
-            Markdown(self.chat_handler.chat_to_markdown(chat=e, include_header=False))
-            for e in self.user_prompt(prompt=user_prompt, state_updates={'avaliable_tools': []})
-        )
-        if display_output:
-            for md in gen:
-                display(md)
-        else:
-            yield from gen
-            
-    class ChatMarkdownBreak(StopIteration):
-        """Custom exception to stop the chat markdown generator."""
-        def __init__(self, message="Chat markdown generation stopped."):
-            super().__init__(message)
-            
-    class ChatMarkdownContinue(Exception):
-        """Custom exception to continue the chat markdown generator."""
-        def __init__(self, message="Chat markdown generation continued."):
-            super().__init__(message)
-            
-    class _ChatMarkdownCommandsHandler():
-        
-        def __init__(self, graph_interface_istance: 'GraphInterface' = None):
-            self.graph_interface_istance = graph_interface_istance
-            # self.NEW_CHAT = {
-            #     'name': 'new_chat',
-            #     'description': 'Start a new chat session.',
-            #     'handler': self.command_new_chat
-            # }
-            self.LAYERS = {
-                'name': 'layers',
-                'description': 'List all layers in the Layer Registry.',
-                'handler': self.command_layers
-            }
-            self.CLEAR = {
-                'name': 'clear',
-                'description': 'List all layers in the Layer Registry.',
-                'handler': self.command_clear
-            }
-            self.HISTORY = {
-                'name': 'history',
-                'description': 'Display all past messages in the conversation.',
-                'handler': self.command_history
-            }
-            self.MAP = {
-                'name': 'map',
-                'description': 'List all layers in the Layer Registry.',
-                'handler': self.command_map
-            }
-            self.EXIT = {
-                'name': 'exit',
-                'description': 'List all layers in the Layer Registry.',
-                'handler': self.command_exit
-            }
-            self.QUIT = {
-                'name': 'quit',
-                'description': 'List all layers in the Layer Registry.',
-                'handler': self.command_exit
-            }
-            self.HELP = {
-                'name': 'help',
-                'description': 'List all layers in the Layer Registry.',
-                'handler': self.command_help
-            }
-            
-        def command_new_chat(self):
-            
-            print("New chat session started.")
-            
-        def command_layers(self):
-            layers = self.graph_interface_istance.get_state('layer_registry')
-            print(layers)
-            
-        def command_clear(self):
-            clear_output()
-            
-        def command_history(self):
-            """
-            Display all past messages in the conversation.
-            """
-            chat_events = self.graph_interface_istance.chat_events
-            if not chat_events:
-                print("No past messages in the conversation.")
-                return
-            display(Markdown(self.graph_interface_istance.chat_handler.chat_to_markdown(chat=chat_events, include_header=False)))
-            
-        def command_map(self):
-            if self.graph_interface_istance.map_handler:
-                display(self.graph_interface_istance.map_handler.m)
-                raise self.graph_interface_istance.ChatMarkdownBreak("Map displayed.")
-            else:
-                print("No map handler available.")
-                
-        def command_exit(self):
-            print("Exiting the conversation.")
-            raise self.graph_interface_istance.ChatMarkdownBreak("Exiting the conversation.")
-        
-        def command_help(self):
-            commands = [
-                self.LAYERS,
-                self.CLEAR,
-                self.MAP,
-                self.EXIT,
-                self.QUIT,
-                self.HELP
-            ]
-            help_text = "\n".join([f"/{cmd['name']}: {cmd['description']}" for cmd in commands])
-            print(f"Available commands:\n{help_text}")
-        
-        def handle_command(self, command:str):
-            """
-            Handle chat markdown commands based on the command string.
-            Args:
-                command (str): The command string to handle.
-                self.graph_interface_istance (GraphInterface): The GraphInterface instance to use for handling commands.
-            """
-            # if command == self.NEW_CHAT['name']:  # TODO: ENABLE ONLY WHEN class ChatMarkowdnHandler is defined (will use the registry)
-            #     self.NEW_CHAT['handler']()
-            if command == self.LAYERS['name']:
-                self.LAYERS['handler']()
-            elif command == self.CLEAR['name']:
-                self.CLEAR['handler']()
-            elif command == self.HISTORY['name']:
-                self.HISTORY['handler']()
-            elif command == self.MAP['name']:
-                self.MAP['handler']()
-            elif command == self.EXIT['name'] or command == self.QUIT['name']:
-                self.EXIT['handler']()
-                
-            elif command == self.HELP['name']:
-                self.HELP['handler']()
-            else:
-                print(f"Unknown command: {command}")
-            raise self.graph_interface_istance.ChatMarkdownContinue("Continuing the conversation.")
-            
-    @property
-    def chat_markdown_commands_handler(self):
-        """Returns the chat markdown commands handler."""
-        if not hasattr(self, '_chat_markdown_commands_handler'):
-            self._chat_markdown_commands_handler = self._ChatMarkdownCommandsHandler(graph_interface_istance=self)
-        return self._chat_markdown_commands_handler
     
 
     

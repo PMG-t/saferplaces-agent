@@ -19,4 +19,4 @@ from .nodes import (
 )
 
 from .graph import graph
-from .agent_interface.graph_interface import GraphRegistry, GraphInterface
+from .agent_interface import __GRAPH_REGISTRY__, GraphInterface

@@ -15,7 +15,7 @@ from . import utils
 _BASE_BUCKET = None
 def setup_base_bucket(user_id, project_id):
     global _BASE_BUCKET
-    _BASE_BUCKET = f's3://{os.getenv("BUCKET_NAME", "saferplaces.co")}/{os.getenv("BUCKET_OUT_DIR", "SaferPlaces-Agent/dev")}/user=={user_id}/project=={project_id}'
+    _BASE_BUCKET = f's3://{os.getenv("BUCKET_NAME", "saferplaces.co")}/{os.getenv("BUCKET_OUT_DIR", "SaferPlaces-Agent/dev")}/user={user_id}/project={project_id}'
 
 
 def iss3(filename):
