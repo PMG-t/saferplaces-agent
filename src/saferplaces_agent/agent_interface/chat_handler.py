@@ -160,9 +160,6 @@ class ChatMarkdownHandler:
                 itype = msg.get("interrupt_type") or msg.get("interrupt", {}).get("type")
                 if itype:
                     extras.append(f"**Tipo:** `{itype}`")
-                resumable = msg.get("resumable")
-                if resumable is not None:
-                    extras.append(f"**Resumable:** `{resumable}`")
                 ns = msg.get("ns")
                 if ns:
                     extras.append(f"**Namespaces:** {_fence(_pretty(ns), 'json')}")
@@ -345,7 +342,7 @@ class ChatMarkdownHandler:
                     metadata_nodata = float(metadata_nodata) if metadata_nodata else 'nan'
                 except ValueError:
                     metadata_nodata = 'nan'
-                metadata_colormap_name = input("Enter the colormap name for the raster layer (optional, default is 'virids'): ") or 'viridis'
+                metadata_colormap_name = input("Enter the colormap name for the raster layer (optional, default is 'viridis'): ") or 'viridis'
                 metadata = {
                     "nodata": metadata_nodata,
                     "colormap_name": metadata_colormap_name
