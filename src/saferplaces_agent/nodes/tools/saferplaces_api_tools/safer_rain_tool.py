@@ -3,6 +3,7 @@ import datetime
 from dateutil import relativedelta
 from enum import Enum
 import requests
+import numpy as np
 
 from typing import Optional, Literal, Union, List, Dict, Any
 from pydantic import BaseModel, Field, AliasChoices, field_validator, model_validator
@@ -170,9 +171,16 @@ class SaferRainTool(BaseAgentTool):
             """
             water = kwargs.get('water', f"water-depth-{utils.b64uuid()}.tif")
             return f"{s3_utils._BASE_BUCKET}/saferrain-out/{water}"
+        
+        def infer_mode(**kwargs):
+            """
+            Infer the execution mode based on the provided arguments. It forces the mode to 'lambda' for now.
+            """
+            return 'lambda'
             
         infer_rules = {
-            'water': infer_water
+            'water': infer_water,
+            'mode': infer_mode,
         }
         return infer_rules
         
@@ -184,7 +192,7 @@ class SaferRainTool(BaseAgentTool):
         **kwargs: Any,  # dict[str, Any] = None,
     ): 
         # DOC: Prepare the payload for Safer-Rain API
-        api_url = f"{os.getenv('SAFERPLACES_API_ROOT', 'http://localhost:5000')}/processes/digital-twin-process/execution"
+        api_url = f"{os.getenv('SAFERPLACES_API_ROOT', 'http://localhost:5000')}/processes/safer-rain-process/execution"
         
         credentials_args = {
             "user": os.getenv("SAFERPLACES_API_USER"),
@@ -220,13 +228,17 @@ class SaferRainTool(BaseAgentTool):
             tool_response = {
                 'tool_response': api_response,
                 'updates': {
+                    # TODO: add only safer-rain related layer if not present (or maybe add with modified description telling they were used for this simulation)
                     'layer_registry': self.graph_state.get('layer_registry', []) + [
                         {
                             'title': f"SaferRain Output",
                             'description': f"SaferRain output file with flooding waterdepth from this inputs: ({', '.join([f'{k}: {v}' for k,v in kwargs.items() if k!='water'])})",
                             'src': api_response['water_depth_file'],
                             'type': 'raster',
-                            'metadata': dict()
+                            'metadata': {
+                                'nodata': str(np.nan),
+                                'colormap_name': 'blues',  # TODO: use a class ColorMaps
+                            }
                         }
                     ]
                     if not GraphStates.src_layer_exists(self.graph_state, api_response['water_depth_file'])

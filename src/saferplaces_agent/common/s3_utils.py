@@ -212,6 +212,27 @@ def s3_upload(filename, uri, remove_src=False, client=None):
     return False
 
 
+def s3_exists(s3_uri: str, client=None) -> bool:
+    """
+    Returns True if the object indicated by s3://bucket/key exists,
+    False if it does not exist.
+    Raises exceptions only for errors other than 404.
+    """
+    bucket_name, key = get_bucket_name_key(s3_uri)
+
+    client = get_client(client)
+
+    try:
+        client.head_object(Bucket=bucket_name, Key=key)
+        return True
+    except ClientError as e:
+        err_code = e.response["Error"]["Code"]
+        if err_code in ("404", "NoSuchKey"):
+            return False
+        # if it is a different error (e.g., AccessDenied), I re-raise
+        raise
+
+
 def list_s3_files(s3_uri, filename_prefix="", client=None, retrieve_properties=[]):
     """
     Elenca tutti i file in un bucket S3 dato il suo URI, filtrando per un prefisso specifico.

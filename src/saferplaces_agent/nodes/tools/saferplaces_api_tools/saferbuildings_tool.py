@@ -344,7 +344,7 @@ class SaferBuildingsTool(BaseAgentTool):
         if api_response.status_code != 200:
             tool_response = {
                 'tool_response': {
-                    'error': f"Failed to execute Safer Rain API: {api_response.status_code} - {api_response.text}"
+                    'error': f"Failed to execute Safer Buildings API: {api_response.status_code} - {api_response.text}"
                 }
             }
             
@@ -354,6 +354,7 @@ class SaferBuildingsTool(BaseAgentTool):
             tool_response = {
                 'tool_response': api_response,
                 'updates': {
+                    # TODO: add only safer-rain related layer if not present (or maybe add with modified description telling they were used for this simulation)
                     'layer_registry': self.graph_state.get('layer_registry', []) + [
                         {
                             'title': f"SaferBuildings Output",

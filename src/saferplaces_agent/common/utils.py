@@ -12,12 +12,17 @@ import datetime
 import tempfile
 import textwrap
 
+import rasterio
+from rasterio.errors import RasterioIOError
+from rasterio.shutil import copy as rio_copy
 
 from typing import Sequence
 
 from langchain_openai import ChatOpenAI
 
 from langchain_core.messages import RemoveMessage, AIMessage, ToolMessage, ToolCall
+
+from . import s3_utils
 
 
 
@@ -40,6 +45,11 @@ def hash_string(s, hash_method=hashlib.md5):
 
 def s3uri_to_https(s3_uri):
     return s3_uri.replace('s3://', 'https://s3.us-east-1.amazonaws.com/')
+def s3https_to_s3uri(https_uri):
+    return https_uri.replace('https://s3.us-east-1.amazonaws.com/', 's3://')
+    
+def s3uri_to_vsis3(s3_uri):
+    return s3_uri.replace('s3://', '/vsis3/')
 
 
 def python_path():
@@ -115,6 +125,79 @@ def dedent(s: str, add_tab: int = 0, tab_first: bool = True) -> str:
 
 
 
+# REGION: [Geospatial utils]
+
+def is_cog(src: str) -> bool:
+    p = src if src.startswith(("/vsicurl/", "/vsis3/", "s3://")) else ("/vsicurl/"+src if src.startswith(("http://","https://")) else src)
+    try:
+        with rasterio.open(p) as ds:
+            if ds.driver != "GTiff": return False
+            if (ds.tags(ns="IMAGE_STRUCTURE").get("LAYOUT","").upper() == "COG"): return True
+            tiled = ds.profile.get("tiled", False) or ds.tags(ns="IMAGE_STRUCTURE").get("TILED","").upper()=="YES"
+            return tiled and len(ds.overviews(1)) > 0
+    except RasterioIOError:
+        return False
+    
+    
+def tif_to_cog(src: str, dst: str = None, debug: bool = False, **kwargs) -> str:
+    # DOC: if src is a s3 uri, convert it to https
+    if src.startswith('s3://'):
+        src = s3uri_to_https(src)
+    
+    # DOC: if src is a S3, check if its cog version exists   
+    if src.startswith('https://s3'):
+        src_uri = s3uri_to_https(src)
+        src_cog_uri = src_uri.replace('.tif', '.cog.tif')
+        if s3_utils.s3_exists(s3https_to_s3uri(src_cog_uri)):
+            return src_cog_uri
+    
+    # DOC: if dst is not provided, create a default one
+    if dst is None:
+        if src.startswith('https://s3'):
+            dst = src.replace('.tif', '.cog.tif')
+        else:
+            dst = f"{s3_utils._BASE_BUCKET}/cog/{juststem(src)}.cog.tif"
+    
+    # DOC: if src is already a COG, return it
+    if is_cog(src):
+        return src   
+    
+    # DOC: if dst is a s3 uri, use a temporary local file     
+    if dst.startswith('s3://') or dst.startswith('https://s3'):
+        use_tmp_dst = True
+        dst_local = os.path.join(_temp_dir, juststem(dst) + '.cog.tif')
+    else:
+        use_tmp_dst = False
+    
+    if debug:
+        print(f"tif_to_cog: Converting {src} to COG at {dst}")
+    
+    # DOC: run cog conversion
+    rio_copy(
+        src,
+        dst if not use_tmp_dst else dst_local,
+        driver="COG",
+        COMPRESS=kwargs.get("COMPRESS", "DEFLATE"),
+        PREDICTOR=kwargs.get("PREDICTOR", "2"),           # 2 per continui, 3 per RGB
+        BLOCKSIZE=kwargs.get("BLOCKSIZE", "256"),
+        BIGTIFF=kwargs.get("BIGTIFF", "IF_SAFER"),
+        NUM_THREADS=kwargs.get("NUM_THREADS", "ALL_CPUS"),
+        OVERVIEWS=kwargs.get("OVERVIEWS", "IGNORE_EXISTING"),
+        RESAMPLING=kwargs.get("RESAMPLING", "AVERAGE")     # stringa, non enum
+    )
+    
+    # DOC: if dst is a s3 uri, upload the local file to s3
+    if use_tmp_dst:
+        dst = s3https_to_s3uri(dst)
+        s3_utils.s3_upload(filename=dst_local, uri=dst, remove_src=True)
+    
+    return dst
+
+
+# ENDREGION: [Geospatial utils]
+
+
+
 # REGION: [Disable arnings]
 
 def disable_warnings():
@@ -146,10 +229,12 @@ def ask_llm(role, message, llm=_base_llm, eval_output=False):
     if eval_output:
         try: 
             content = llm_out.content
-            print('\n\n')
-            print(type(content))
-            print(content)
-            print('\n\n')
+            
+            # TODO: Print if in debug mode (also maybe it is useful to write on a file? (saved on s3!!! wow))
+            # print('\n\n')
+            # print(type(content))
+            # print(content)
+            # print('\n\n')
             
             # DOC: LLM can asnwer with a python code block, so we need to extract the code and evaluate it
             if type(content) is str and content.startswith('```python'):
@@ -217,9 +302,6 @@ def merge_dict_sequences(left: Sequence[dict], right: Sequence[dict], unique_key
         else:
             merged[item[unique_key]] = item       
     return list(merged.values())
-
-def merge_layer_registry(left: Sequence[dict], right: Sequence[dict]) -> Sequence[dict]:
-    return merge_dict_sequences(left, right, unique_key='src')
             
 
 def is_human_message(message):
