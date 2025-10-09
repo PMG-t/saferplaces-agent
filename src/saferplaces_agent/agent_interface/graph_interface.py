@@ -112,7 +112,7 @@ class GraphInterface:
         thread_id: str,
         user_id: str,
         project_id: str,
-        map_handler: bool = False
+        map_handler: str | bool | None = None
     ):
         self.G: CompiledStateGraph = graph
         self.thread_id = thread_id
@@ -126,7 +126,12 @@ class GraphInterface:
         self.conversation_events = []
         self.conversation_handler = ConversationHandler(chat_id=self.thread_id, title=f"Chat {user_id}", subtitle=f"Thread {thread_id}")
         
-        self.map_handler = LeafmapInterface() if map_handler else None
+        if map_handler is not None:
+            if map_handler is True:
+                self.map_handler = LeafmapInterface()
+            else:
+                self.map_handler = LeafmapInterface(provider=map_handler)
+            
         
         s3_utils.setup_base_bucket(user_id=self.user_id, project_id=self.project_id)
         self.restore_state()

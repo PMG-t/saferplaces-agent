@@ -1,12 +1,49 @@
 import numpy as np
-import leafmap.maplibregl as leafmap
+
+import geopandas as gpd
+
+# import leafmap
+# import leafmap.maplibregl as leafmap
 
 from ..common import utils, s3_utils
 
+
+class LeafmapProviders():
+    
+    MapLibreGL = 'MapLibreGL'
+    MapLibreGL3D = 'MapLibreGL3D'
+    
+    __valid_providers__ = [
+        MapLibreGL,
+        MapLibreGL3D
+    ]
+    
+    def init_map(provider: str = MapLibreGL):
+        
+        if provider not in LeafmapProviders.__valid_providers__:
+            raise ValueError(f'Provider {provider} is not supported. Valid providers are {LeafmapProviders.__valid_providers__}')
+        
+        if provider == LeafmapProviders.MapLibreGL:
+            import leafmap.maplibregl as leafmap
+            m = leafmap.Map()
+            return m
+        
+        elif provider == LeafmapProviders.MapLibreGL3D:
+            import leafmap.maplibregl as leafmap
+            m = leafmap.Map(
+                style=leafmap.maptiler_3d_style(
+                    style='dataviz', 
+                    exaggeration=2, 
+                    tile_size=256
+                )
+            )
+            m.add_overture_3d_buildings()
+            return m
+
 class LeafmapInterface():
     
-    def __init__(self):
-        self.m = leafmap.Map()
+    def __init__(self, provider: str = LeafmapProviders.MapLibreGL):
+        self.m = LeafmapProviders.init_map(provider)
         self.registred_layers = []  # DOC: Only src by noww ..
         
         
@@ -34,10 +71,16 @@ class LeafmapInterface():
         src = utils.s3uri_to_https(src)
         name = kwargs.pop('title', utils.juststem(src))
         
-        self.m.add_vector(
-            data = src,
+        # DOC: when using vector layers in MapLibreGL they needs to be in EPSG:4326
+        gdf = gpd.read_file(src)
+        if gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(epsg=4326)
+        
+        self.m.add_gdf(
+            gdf = gdf,
             name = name
         )
+        
         
     def add_raster_layer(self, src, **kwargs):
         """Add a raster layer to the map."""
@@ -55,5 +98,9 @@ class LeafmapInterface():
             colormap_name = colormap,
             nodata = nodata,
         )
+        
+    
+    def add_3d_buildings(self):
+        self.m.add_overture_3d_buildings()
         
         
