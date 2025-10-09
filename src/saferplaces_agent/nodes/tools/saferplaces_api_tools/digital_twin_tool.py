@@ -188,8 +188,8 @@ class DigitalTwinTool(BaseAgentTool):
         kwargs['bbox'] = kwargs['bbox'].to_list()
         
         additional_args = {
-            "workspace": s3_utils._BASE_BUCKET.lstrip('s3://'),
-            "project": f'digitaltwin-out-{exec_uuid}',
+            "workspace": s3_utils.get_bucket_name_key(s3_utils._BASE_BUCKET)[0],
+            "project": s3_utils.get_bucket_name_key(s3_utils._BASE_BUCKET)[1],
             "file_dem": f'dem-{exec_uuid}.tif',
             "file_building": f'building-{exec_uuid}.shp',
             "file_landuse": f'landuse-{exec_uuid}.tif',
