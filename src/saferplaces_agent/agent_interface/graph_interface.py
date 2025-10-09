@@ -193,8 +193,10 @@ class GraphInterface:
             'type': layer_type if layer_type else 'vector' if utils.justext(src) in ['geojson', 'gpkg', 'shp'] else 'raster',
             ** ({ 'metadata': metadata } if metadata else dict()),
         }
-        event_value = { 'layer_registry': [layer_dict] }
-        
+        event_value = { 
+            'messages': [ GraphStates.build_layer_registry_system_message(self.graph_state.get('layer_registry', []) + [layer_dict]) ],
+            'layer_registry': [layer_dict] 
+        }
         _ = list( self.G.stream(
             input = event_value,
             config = self.config, stream_mode = 'updates'
