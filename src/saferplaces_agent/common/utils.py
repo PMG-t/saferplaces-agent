@@ -12,6 +12,9 @@ import datetime
 import tempfile
 import textwrap
 
+import pyogrio
+import geopandas as gpd
+
 import rasterio
 from rasterio.errors import RasterioIOError
 from rasterio.shutil import copy as rio_copy
@@ -126,6 +129,72 @@ def dedent(s: str, add_tab: int = 0, tab_first: bool = True) -> str:
 
 
 # REGION: [Geospatial utils]
+
+def get_geodataframe_crs(geo_df):
+    epsg_code = geo_df.crs.to_epsg()
+    if epsg_code is None:
+        raise ValueError("GeoDataFrame does not have a defined CRS.")
+    return f"EPSG:{epsg_code}"
+
+def is_vector_4326(geo_df):
+    """Check if the GeoDataFrame is in EPSG:4326."""
+    eps_string = get_geodataframe_crs(geo_df)
+    return eps_string == 'EPSG:4326'
+
+def fast_is_vector_4326(src: str) -> bool:
+    tmp = s3_utils.s3_download(s3https_to_s3uri(src), justfname(src))
+    info = pyogrio.read_info(tmp)
+    is_4326 = info["crs"] == "EPSG:4326"
+    os.remove(tmp)
+    return is_4326
+
+def vector_to_geojson4326(src: str, dst: str = None, debug: bool = False) -> str:
+    # DOC: if src is a s3 uri, convert it to https
+    if src.startswith('s3://'):
+        src = s3uri_to_https(src)
+        
+    # DOC: if src is a S3, check if its 4326 version exists
+    if src.startswith('https://s3'):
+        src_uri = s3uri_to_https(src)
+        ext = justext(src_uri)
+        src_4326_uri = src_uri.replace(f'.{ext}', '.4326.geojson')
+        if s3_utils.s3_exists(s3https_to_s3uri(src_4326_uri)):
+            return src_4326_uri
+        
+    # DOC: if dst is not provided, create a default one
+    if dst is None:
+        if src.startswith('https://s3'):
+            ext = justext(src)
+            dst = src.replace(f'.{ext}', '.4326.geojson')
+        else:
+            dst = f"{s3_utils._BASE_BUCKET}/4326/{juststem(src)}.4326.geojson"
+            
+    # DOC: if src is already a 4326 geojson, return it
+    if justext(src) == 'geojson' and fast_is_vector_4326(src):
+        return src
+    
+    # DOC: if dst is a s3 uri, use a temporary local file
+    if dst.startswith('s3://') or dst.startswith('https://s3'):
+        use_tmp_dst = True
+        dst_local = os.path.join(_temp_dir, juststem(dst) + '.4326.geojson')
+    else:
+        use_tmp_dst = False
+        
+    if debug:
+        print(f"vector_to_geojson4326: Converting {src} to 4326 GeoJSON at {dst}")
+        
+    # DOC: run conversion
+    gdf = gpd.read_file(src)
+    gdf4326 = gdf.to_crs(epsg=4326)
+    gdf4326.to_file(dst if not use_tmp_dst else dst_local, driver='GeoJSON')
+    
+    # DOC: if dst is a s3 uri, upload the local file to s3
+    if use_tmp_dst:
+        dst = s3https_to_s3uri(dst)
+        s3_utils.s3_upload(filename=dst_local, uri=dst, remove_src=True)
+        
+    return dst
+    
 
 def is_cog(src: str) -> bool:
     p = src if src.startswith(("/vsicurl/", "/vsis3/", "s3://")) else ("/vsicurl/"+src if src.startswith(("http://","https://")) else src)

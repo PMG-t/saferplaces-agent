@@ -126,11 +126,14 @@ class GraphInterface:
         self.conversation_events = []
         self.conversation_handler = ConversationHandler(chat_id=self.thread_id, title=f"Chat {user_id}", subtitle=f"Thread {thread_id}")
         
+        self.map_handler = None
         if map_handler is not None:
             if map_handler is True:
                 self.map_handler = LeafmapInterface()
-            else:
+            elif isinstance(map_handler, str):
                 self.map_handler = LeafmapInterface(provider=map_handler)
+            else:
+                raise ValueError(f"Invalid map_handler type: {type(map_handler)}. Expected str or bool.")
             
         
         s3_utils.setup_base_bucket(user_id=self.user_id, project_id=self.project_id)

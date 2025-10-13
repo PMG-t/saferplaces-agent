@@ -14,6 +14,8 @@ from . import utils
 
 _BASE_BUCKET = None
 def setup_base_bucket(user_id, project_id):
+    # !!!: This logic does not handle the simultaneous use of the agent from different users or projects. 
+    # TODO: Use GraphState property (when needed in other modules and not here)
     global _BASE_BUCKET
     _BASE_BUCKET = f's3://{os.getenv("BUCKET_NAME", "saferplaces.co")}/{os.getenv("BUCKET_OUT_DIR", "SaferPlaces-Agent/dev")}/user={user_id}/project={project_id}'
 
