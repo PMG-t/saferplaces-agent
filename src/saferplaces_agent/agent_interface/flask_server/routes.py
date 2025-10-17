@@ -151,7 +151,6 @@ def render_layer(thread_id):
         )
 
     layer_src = layer_data.get('src', None)
-    
     if not layer_src:
         return jsonify({"error": "Layer source is required"}), 400
     
