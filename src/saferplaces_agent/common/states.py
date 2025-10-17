@@ -37,6 +37,21 @@ def merge_layer_registry(left: Sequence[dict], right: Sequence[dict]) -> Sequenc
 
 
 
+def src_layer_exists(graph_state: BaseGraphState, layer_src: str) -> bool:
+    """Check if the layer exists in the graph state."""
+    return any(layer.get('src') == layer_src for layer in graph_state.get('layer_registry', []))
+
+def new_layer_title(graph_state: BaseGraphState, base_title: str) -> str:
+    layers = graph_state.get('layer_registry', [])
+    base_title_layers = [layer for layer in layers if layer.get('title', '').startswith(base_title)]
+    # Find the highest index in existing titles
+    indices = [int(lt.split()[-1]) for lt in base_title_layers]
+    if len(indices) == 0:
+        return f"{base_title} {str(1).zfill(3)}"
+    max_index = max(indices)
+    return f"{base_title} {str(max_index + 1).zfill(3)}"
+
+
 
 def build_nowtime_system_message():
     """
@@ -58,10 +73,6 @@ def build_nowtime_system_message():
     
     return SystemMessage(content="\n".join(lines))
 
-
-def src_layer_exists(graph_state: BaseGraphState, layer_src: str) -> bool:
-    """Check if the layer exists in the graph state."""
-    return any(layer.get('src') == layer_src for layer in graph_state.get('layer_registry', []))
 
 
 def build_layer_registry_system_message(layer_registry: list) -> SystemMessage:

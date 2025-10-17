@@ -231,7 +231,7 @@ class SaferRainTool(BaseAgentTool):
                     # TODO: add only safer-rain related layer if not present (or maybe add with modified description telling they were used for this simulation)
                     'layer_registry': self.graph_state.get('layer_registry', []) + [
                         {
-                            'title': f"SaferRain Output",
+                            'title': GraphStates.new_layer_title(self.graph_state, "SaferRain Output"),
                             'description': f"SaferRain output file with flooding waterdepth from this inputs: ({', '.join([f'{k}: {v}' for k,v in kwargs.items() if k!='water'])})",
                             'src': api_response['water_depth_file'],
                             'type': 'raster',
