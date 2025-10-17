@@ -9,15 +9,20 @@ import math
 import base64
 import hashlib
 import datetime
+import requests
 import tempfile
 import textwrap
+import urllib.parse
 
 import pyogrio
 import geopandas as gpd
 
 import rasterio
-from rasterio.errors import RasterioIOError
+from rasterio.io import MemoryFile
+from rasterio.warp import calculate_default_transform, reproject
+from rasterio.enums import Resampling
 from rasterio.shutil import copy as rio_copy
+from rasterio.errors import RasterioIOError
 
 from typing import Sequence
 
@@ -47,9 +52,44 @@ def hash_string(s, hash_method=hashlib.md5):
     return hash_method(s.encode('utf-8')).hexdigest()
 
 def s3uri_to_https(s3_uri):
-    return s3_uri.replace('s3://', 'https://s3.us-east-1.amazonaws.com/')
-def s3https_to_s3uri(https_uri):
-    return https_uri.replace('https://s3.us-east-1.amazonaws.com/', 's3://')
+    """
+    Converte una URI S3 (s3://bucket/key) in un URL HTTP (https://bucket.s3.amazonaws.com/key)
+    con encoding dei caratteri speciali.
+    """
+    if not s3_uri.startswith("s3://"):
+        return s3_uri  # Already an HTTPS URL or invalid format
+    # Rimuovi prefisso e separa bucket e key
+    bucket, key = s3_utils.get_bucket_name_key(s3_uri)
+    s3_region = os.getenv("AWS_REGION", "us-east-1")  # Default to us-east-1 if not set
+    # Encode della chiave
+    encoded_key = urllib.parse.quote(key, safe="/")
+    return f"https://s3.{s3_region}.amazonaws.com/{bucket}/{encoded_key}"
+
+def s3https_to_s3uri(s3_url):
+    """
+    Converte un URL S3 (sia virtual-hosted-style che path-style)
+    in un URI S3 (s3://bucket/key), tenendo conto della regione.
+    """
+    parsed = urllib.parse.urlparse(s3_url)
+    host = parsed.netloc
+    path = parsed.path.lstrip('/')
+    # Caso 1: Virtual-hosted-style → <bucket>.s3.<region>.amazonaws.com/<key>
+    vh_match = re.match(r'^([^.]+)\.s3[.-]([a-z0-9-]+)?\.amazonaws\.com$', host)
+    if vh_match:
+        bucket = vh_match.group(1)
+        key = urllib.parse.unquote(path)
+        return f"s3://{bucket}/{key}"
+    # Caso 2: Path-style → s3.<region>.amazonaws.com/<bucket>/<key>
+    ps_match = re.match(r'^s3[.-]([a-z0-9-]+)?\.amazonaws\.com$', host)
+    if ps_match:
+        # Bucket è la prima parte del path
+        parts = path.split('/', 1)
+        if len(parts) != 2:
+            raise ValueError("Path non valido per URL S3 path-style")
+        bucket, key = parts
+        key = urllib.parse.unquote(key)
+        return f"s3://{bucket}/{key}"
+    return s3_url  # Non è un URL S3 valido, restituisci come tale
     
 def s3uri_to_vsis3(s3_uri):
     return s3_uri.replace('s3://', '/vsis3/')
@@ -206,59 +246,154 @@ def is_cog(src: str) -> bool:
             return tiled and len(ds.overviews(1)) > 0
     except RasterioIOError:
         return False
+
+def is_raster_3857(src: str) -> bool:
+    # Gestione percorsi remoti
+    src = src if src.startswith(("/vsicurl/", "/vsis3/", "s3://")) else ("/vsicurl/"+src if src.startswith(("http://","https://")) else src)
+    is_remote = src.startswith("http://") or src.startswith("https://") or src.startswith("s3://") or src.startswith("/vsis3/") or src.startswith("/vsicurl/") 
+
+    if is_remote:
+        # Prova con /vsicurl/
+        # vsicurl_path = f"/vsicurl/{src}"
+        try:
+            with rasterio.open(src) as ds:
+                return ds.crs is not None and ds.crs.to_epsg() == 3857
+        except Exception:
+            # fallback: scarica temporaneamente il file
+            with tempfile.NamedTemporaryFile(suffix=".tif", delete=True) as tmp:
+                r = requests.get(src, timeout=30)
+                r.raise_for_status()
+                tmp.write(r.content)
+                tmp.flush()
+                try:
+                    with rasterio.open(tmp.name) as ds:
+                        return ds.crs is not None and ds.crs.to_epsg() == 3857
+                except Exception:
+                    return False
+    else:
+        # File locale
+        if not os.path.exists(src):
+            raise FileNotFoundError(f"File non trovato: {src}")
+        try:
+            with rasterio.open(src) as ds:
+                return ds.crs is not None and ds.crs.to_epsg() == 3857
+        except Exception:
+            return False
     
-    
-def tif_to_cog(src: str, dst: str = None, debug: bool = False, **kwargs) -> str:
+def tif_to_cog3857(src: str, dst: str = None, debug: bool = False, **kwargs) -> str:
+    # DOC: if src is already a COG in EPSG:3857, return it
+    do_reproject = not is_raster_3857(src)
+    do_cog = do_reproject or not is_cog(src)
+    if not any([do_reproject, do_cog]):
+        return src
+
     # DOC: if src is a s3 uri, convert it to https
     if src.startswith('s3://'):
         src = s3uri_to_https(src)
     
     # DOC: if src is a S3, check if its cog version exists   
     if src.startswith('https://s3'):
-        src_uri = s3uri_to_https(src)
-        src_cog_uri = src_uri.replace('.tif', '.cog.tif')
-        if s3_utils.s3_exists(s3https_to_s3uri(src_cog_uri)):
-            return src_cog_uri
+        src_cog_url = src.replace('.tif', '-cog3857.tif')
+        if s3_utils.s3_exists(s3https_to_s3uri(src_cog_url)):
+            return s3https_to_s3uri(src_cog_url)
     
     # DOC: if dst is not provided, create a default one
     if dst is None:
         if src.startswith('https://s3'):
-            dst = src.replace('.tif', '.cog.tif')
+            dst = src.replace('.tif', '-cog3857.tif')
         else:
-            dst = f"{s3_utils._BASE_BUCKET}/cog/{juststem(src)}.cog.tif"
-    
-    # DOC: if src is already a COG, return it
-    if is_cog(src):
-        return src   
-    
+            dst = f"{s3_utils._BASE_BUCKET}/cog/{juststem(src)}-cog3857.tif"
+
     # DOC: if dst is a s3 uri, use a temporary local file     
     if dst.startswith('s3://') or dst.startswith('https://s3'):
         use_tmp_dst = True
-        dst_local = os.path.join(_temp_dir, juststem(dst) + '.cog.tif')
+        dst_local = os.path.join(_temp_dir, juststem(dst) + '-cog3857.tif')
     else:
         use_tmp_dst = False
     
     if debug:
         print(f"tif_to_cog: Converting {src} to COG at {dst}")
+
+    def to_cog(src, dst, **kwargs):
+        """Run the COG conversion."""
+        rio_copy(
+            src,
+            dst,
+            driver="COG",
+            COMPRESS=kwargs.get("COMPRESS", "DEFLATE"),
+            PREDICTOR=kwargs.get("PREDICTOR", "2"),           # 2 per continui, 3 per RGB
+            BLOCKSIZE=kwargs.get("BLOCKSIZE", "256"),
+            BIGTIFF=kwargs.get("BIGTIFF", "IF_SAFER"),
+            NUM_THREADS=kwargs.get("NUM_THREADS", "ALL_CPUS"),
+            OVERVIEWS=kwargs.get("OVERVIEWS", "IGNORE_EXISTING"),
+            RESAMPLING=kwargs.get("RESAMPLING", "AVERAGE")     # stringa, non enum
+        )
+
+    if do_reproject:
+        dst_crs = "EPSG:3857"
+        src_rio = src if src.startswith(("/vsicurl/", "/vsis3/", "s3://")) else ("/vsicurl/"+src if src.startswith(("http://","https://")) else src)
+        print(f"tif_to_cog: Reprojecting {src_rio} to {dst_crs}")
+        with rasterio.open(src_rio) as src_ds:
+            transform, width, height = calculate_default_transform(
+                src_ds.crs, dst_crs, src_ds.width, src_ds.height, *src_ds.bounds
+            )
+            kwargs = src_ds.meta.copy()
+            kwargs.update({
+                "crs": dst_crs,
+                "transform": transform,
+                "width": width,
+                "height": height
+            })
+            with MemoryFile() as memfile:
+                with memfile.open(**kwargs) as dst_ds:
+                    for i in range(1, src_ds.count + 1):
+                        reproject(
+                            source=rasterio.band(src_ds, i),
+                            destination=rasterio.band(dst_ds, i),
+                            src_transform=src_ds.transform,
+                            src_crs=src_ds.crs,
+                            dst_transform=transform,
+                            dst_crs=dst_crs,
+                            resampling=Resampling.average
+                        )
+                # DOC: run cog conversion
+                # rio_copy(
+                #     memfile.name,
+                #     dst if not use_tmp_dst else dst_local,
+                #     driver="COG",
+                #     COMPRESS=kwargs.get("COMPRESS", "DEFLATE"),
+                #     PREDICTOR=kwargs.get("PREDICTOR", "2"),           # 2 per continui, 3 per RGB
+                #     BLOCKSIZE=kwargs.get("BLOCKSIZE", "256"),
+                #     BIGTIFF=kwargs.get("BIGTIFF", "IF_SAFER"),
+                #     NUM_THREADS=kwargs.get("NUM_THREADS", "ALL_CPUS"),
+                #     OVERVIEWS=kwargs.get("OVERVIEWS", "IGNORE_EXISTING"),
+                #     RESAMPLING=kwargs.get("RESAMPLING", "AVERAGE")     # stringa, non enum
+                # )
+                to_cog(memfile.name, dst if not use_tmp_dst else dst_local, **kwargs)
     
-    # DOC: run cog conversion
-    rio_copy(
-        src,
-        dst if not use_tmp_dst else dst_local,
-        driver="COG",
-        COMPRESS=kwargs.get("COMPRESS", "DEFLATE"),
-        PREDICTOR=kwargs.get("PREDICTOR", "2"),           # 2 per continui, 3 per RGB
-        BLOCKSIZE=kwargs.get("BLOCKSIZE", "256"),
-        BIGTIFF=kwargs.get("BIGTIFF", "IF_SAFER"),
-        NUM_THREADS=kwargs.get("NUM_THREADS", "ALL_CPUS"),
-        OVERVIEWS=kwargs.get("OVERVIEWS", "IGNORE_EXISTING"),
-        RESAMPLING=kwargs.get("RESAMPLING", "AVERAGE")     # stringa, non enum
-    )
+    elif do_cog:
+        # DOC: run cog conversion
+        # rio_copy(
+        #     src,
+        #     dst if not use_tmp_dst else dst_local,
+        #     driver="COG",
+        #     COMPRESS=kwargs.get("COMPRESS", "DEFLATE"),
+        #     PREDICTOR=kwargs.get("PREDICTOR", "2"),           # 2 per continui, 3 per RGB
+        #     BLOCKSIZE=kwargs.get("BLOCKSIZE", "256"),
+        #     BIGTIFF=kwargs.get("BIGTIFF", "IF_SAFER"),
+        #     NUM_THREADS=kwargs.get("NUM_THREADS", "ALL_CPUS"),
+        #     OVERVIEWS=kwargs.get("OVERVIEWS", "IGNORE_EXISTING"),
+        #     RESAMPLING=kwargs.get("RESAMPLING", "AVERAGE")     # stringa, non enum
+        # )
+        to_cog(src, dst if not use_tmp_dst else dst_local, **kwargs)
     
     # DOC: if dst is a s3 uri, upload the local file to s3
+    print(f"tif_to_cog: Conversion completed, saving to {dst if not use_tmp_dst else dst_local}")
     if use_tmp_dst:
         dst = s3https_to_s3uri(dst)
-        s3_utils.s3_upload(filename=dst_local, uri=dst, remove_src=True)
+        upload_status = s3_utils.s3_upload(filename=dst_local, uri=dst, remove_src=True)
+        if not upload_status:
+            raise Exception(f"Failed to upload {dst_local} to {dst}")
     
     return dst
 

@@ -7,13 +7,10 @@ import geopandas as gpd
 
 from markupsafe import escape
 
-from flask import Response, request, jsonify, session, current_app as app
+from flask import Response, request, jsonify, current_app as app
 
 from .. import GraphInterface
 from ... import utils, s3_utils
-
-
-app.secret_key = "The session is unavailable because no secret key was set. Set the secret_key on the application to something unique and secret."     # DOC: ahahah 
 
 
 # @app.before_request
@@ -64,7 +61,6 @@ def start():
             project_id = 'project_000',
             map_handler = None
         )
-        session["session_id"] = gi.thread_id
     
     elif request.method == 'POST':
         data = request.get_json(silent=True) or {}
@@ -78,11 +74,11 @@ def start():
                 project_id = data.get('project_id', 'project_000'),
                 map_handler = None
             )
-            
-        session["session_id"] = gi.thread_id
         
     else:
         return jsonify({"error": f"Method {request.method} not allowed"}), 405
+    
+    print(f"Started with GraphInterface ID: {gi.thread_id}")
     
     return jsonify({
         "thread_id": gi.thread_id,
@@ -133,25 +129,42 @@ def layers(thread_id):
     return jsonify(layers), 200
 
 
-@app.route('/render', methods=['POST'])
-def render_layer():
-    data = request.get_json(silent=True) or {}
-    layer_src = data.get('src', None)
+@app.route('/t/<thread_id>/render', methods=['POST'])
+def render_layer(thread_id):
+    data = request.get_json(silent=True) or dict()
+
+    layer_data = data.get('layer_data', None)
+    if not layer_data:
+        return jsonify({"error": "Layer data is required"}), 400
+
+    to_be_registered = layer_data.get('register', False)
+    if to_be_registered:
+        gi: GraphInterface = app.__GRAPH_REGISTRY__.get(thread_id)
+        if not gi:
+            return jsonify({"error": "GraphInterface not found"}), 404
+        gi.register_layer(
+            src = layer_data['src'],
+            title = layer_data.get('title', None),
+            description = layer_data.get('description', None),
+            layer_type = layer_data.get('type', None),
+            metadata = layer_data.get('metadata', dict()),
+        )
+
+    layer_src = layer_data.get('src', None)
     
     if not layer_src:
         return jsonify({"error": "Layer source is required"}), 400
     
-    layer_type = data.get('type', None)
+    layer_type = layer_data.get('type', None)
     if not layer_type:
         return jsonify({"error": "Layer type is required"}), 400
     
-    if layer_type == 'raster':
-        return jsonify({"error": "Raster layer rendering is not implemented yet"}), 501
-    
-    elif layer_type == 'vector':
+    if layer_type == 'vector':
         layer_render_src = utils.vector_to_geojson4326(layer_src)
+    elif layer_type == 'raster':
+        layer_render_src = utils.tif_to_cog3857(layer_src)
             
     else:
         return jsonify({"error": f"Layer type '{layer_type}' is not supported"}), 400
         
-    return jsonify({'src': layer_render_src}), 200
+    return jsonify({'src': utils.s3uri_to_https(layer_render_src)}), 200

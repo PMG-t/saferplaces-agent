@@ -85,7 +85,7 @@ class LeafmapInterface():
     def add_raster_layer(self, src, **kwargs):
         """Add a raster layer to the map."""
         
-        src_cog = utils.tif_to_cog(src)
+        src_cog = utils.tif_to_cog3857(src)
         
         src_cog = utils.s3uri_to_https(src_cog)
         name = kwargs.pop('title', utils.juststem(src_cog))

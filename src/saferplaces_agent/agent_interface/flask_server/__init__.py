@@ -6,7 +6,10 @@ from .. import __GRAPH_REGISTRY__
 
 def create_app():
     app = Flask(__name__)
-    
+
+    # DOC: Chiave segreta per firmare le sessioni
+    app.secret_key = "The session is unavailable because no secret key was set. Set the secret_key on the application to something unique and secret."     # DOC: ahahah 
+
     # DOC: Enable CORS for all routes
     CORS(app)
     
